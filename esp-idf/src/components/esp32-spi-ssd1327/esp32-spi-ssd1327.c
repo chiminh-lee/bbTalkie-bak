@@ -7,26 +7,25 @@
 
 #include "esp32-spi-ssd1327.h"
 
+uint8_t whitecircle16[128] = {0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00,
+                              0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
+                              0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
+                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
+                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
+                              0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+                              0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
+                              0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00};
 
-uint8_t whitecircle16[128] = { 0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00,
-                               0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
-                               0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-                               0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                               0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                               0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                               0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                               0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-                               0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
-                               0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00 };
-
-
-void spi_oled_init(struct spi_ssd1327 *spi_ssd1327) {
+void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
+{
     /* {{{ */
     spi_oled_reset(spi_ssd1327);
 
@@ -106,8 +105,8 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327) {
     /* }}} */
 }
 
-
-void spi_oled_reset(struct spi_ssd1327 *spi_ssd1327) {
+void spi_oled_reset(struct spi_ssd1327 *spi_ssd1327)
+{
     /* {{{ */
     gpio_set_level(spi_ssd1327->rst_pin_num, 1);
     vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -118,8 +117,8 @@ void spi_oled_reset(struct spi_ssd1327 *spi_ssd1327) {
     /* }}} */
 }
 
-
-void spi_oled_send_cmd(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd) {
+void spi_oled_send_cmd(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd)
+{
     /* {{{ */
     spi_device_acquire_bus(*(spi_ssd1327->spi_handle), portMAX_DELAY);
     gpio_set_level(spi_ssd1327->dc_pin_num, 0);
@@ -135,15 +134,15 @@ void spi_oled_send_cmd(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd) {
     /* }}} */
 }
 
-
-void spi_oled_send_cmd_arg(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd, \
-    uint8_t arg) {
+void spi_oled_send_cmd_arg(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd,
+                           uint8_t arg)
+{
 
     /* {{{ */
     spi_device_acquire_bus(*(spi_ssd1327->spi_handle), portMAX_DELAY);
     gpio_set_level(spi_ssd1327->dc_pin_num, 0);
 
-    uint8_t cmdarg[2] = { cmd, arg };
+    uint8_t cmdarg[2] = {cmd, arg};
 
     spi_transaction_t transaction;
     memset(&transaction, 0, sizeof(transaction)); // Zero out the transaction
@@ -156,9 +155,9 @@ void spi_oled_send_cmd_arg(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd, \
     /* }}} */
 }
 
-
-void spi_oled_send_data(struct spi_ssd1327 *spi_ssd1327, void * data, \
-    uint32_t data_len_bits) {
+void spi_oled_send_data(struct spi_ssd1327 *spi_ssd1327, void *data,
+                        uint32_t data_len_bits)
+{
 
     /* {{{ */
     spi_device_acquire_bus(*(spi_ssd1327->spi_handle), portMAX_DELAY);
@@ -175,18 +174,18 @@ void spi_oled_send_data(struct spi_ssd1327 *spi_ssd1327, void * data, \
     /* }}} */
 }
 
-
-void spi_oled_draw_square(struct spi_ssd1327 *spi_ssd1327, uint8_t x, \
-    uint8_t y, uint8_t width, uint8_t height, ssd1327_gs_t gs) {
+void spi_oled_draw_square(struct spi_ssd1327 *spi_ssd1327, uint8_t x,
+                          uint8_t y, uint8_t width, uint8_t height, ssd1327_gs_t gs)
+{
 
     /* {{{ */
     /* Function: Set Column Address (Tell device we are about to set the
      * column bounds for an upcoming write). (See datasheet p. 36) */
     spi_oled_send_cmd(spi_ssd1327, 0x15);
     /* Set the column start address */
-    spi_oled_send_cmd(spi_ssd1327, ((x+1)/2));
+    spi_oled_send_cmd(spi_ssd1327, ((x + 1) / 2));
     /* Set the column end address */
-    spi_oled_send_cmd(spi_ssd1327, ((x+1)/2) + ((width + 1)/2) - 1);
+    spi_oled_send_cmd(spi_ssd1327, ((x + 1) / 2) + ((width + 1) / 2) - 1);
 
     /* Function: Set Row Address (Tell device we are about to set the
      * row bounds for an upcoming write) (See datasheet p. 36) */
@@ -196,32 +195,34 @@ void spi_oled_draw_square(struct spi_ssd1327 *spi_ssd1327, uint8_t x, \
     /* Set the row end address */
     spi_oled_send_cmd(spi_ssd1327, y + height - 1);
 
-    uint8_t rowdata[(width + 1)/2];
+    uint8_t rowdata[(width + 1) / 2];
 
     /* Create a row populated with pixels of the grayscale represented by 'gs' */
-    for (int i = 0; i < ((width + 1) / 2); i++) {
+    for (int i = 0; i < ((width + 1) / 2); i++)
+    {
         rowdata[i] = (gs << 4) | gs;
     }
 
     /* Draw the in the square, one row at a time */
-    for (int j = 0; j < 128; j++) {
+    for (int j = 0; j < 128; j++)
+    {
         spi_oled_send_data(spi_ssd1327, &rowdata[0], 4 * width);
     }
     /* }}} */
 }
 
-
-void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x, \
-    uint8_t y) {
+void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x,
+                          uint8_t y)
+{
 
     /* {{{ */
     /* Function: Set Column Address (Tell device we are about to set the
      * column bounds for an upcoming write). (See datasheet p. 36) */
     spi_oled_send_cmd(spi_ssd1327, 0x15);
     /* Set the column start address */
-    spi_oled_send_cmd(spi_ssd1327, ((x+1)/2));
+    spi_oled_send_cmd(spi_ssd1327, ((x + 1) / 2));
     /* Set the column end address */
-    spi_oled_send_cmd(spi_ssd1327, ((x+1)/2) + (16/2) - 1);
+    spi_oled_send_cmd(spi_ssd1327, ((x + 1) / 2) + (16 / 2) - 1);
 
     /* Function: Set Row Address (Tell device we are about to set the
      * row bounds for an upcoming write) (See datasheet p. 36) */
@@ -232,9 +233,121 @@ void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x, \
     spi_oled_send_cmd(spi_ssd1327, y + 16 - 1);
 
     /* Draw the 16 pixel diameter circle */
-    for (int j = 0; j < 16; j++) {
+    for (int j = 0; j < 16; j++)
+    {
         /* 8 bits per array element * 16 rows * (16 columns / 2 pixels per column) */
-        spi_oled_send_data(spi_ssd1327, &whitecircle16[0], 8 * 16 * (16/2));
+        spi_oled_send_data(spi_ssd1327, &whitecircle16[0], 8 * 16 * (16 / 2));
     }
     /* }}} */
 }
+
+// Assumed font structure
+typedef struct
+{
+    uint8_t width;
+    uint8_t height;
+    const uint8_t *data; // Packed [num_chars][bytes_per_char]
+} font_t;
+
+/*
+const uint8_t font8x8_basic[95][8] = { };
+
+font_t font8x8 = {
+    .width = 8,
+    .height = 8,
+    .data = (const uint8_t *)font8x8_basic,
+};
+*/
+
+void spi_oled_drawText(
+    struct spi_ssd1327 *spi_ssd1327,
+    uint8_t x, uint8_t y,
+    const font_t *font,
+    ssd1327_gs_t gs, // Grayscale (0–15)
+    const char *text)
+{
+    while (*text)
+    {
+        char c = *text++;
+        // ASCII 32..126 supported
+        if (c < 32 || c > 126)
+            continue;
+        uint16_t offset = (c - 32) * font->height;
+
+        // Render each row of the character
+        for (uint8_t row = 0; row < font->height; ++row)
+        {
+            spi_oled_send_cmd(spi_ssd1327, 0x15); // Set col
+            spi_oled_send_cmd(spi_ssd1327, (x) / 2);
+            spi_oled_send_cmd(spi_ssd1327, (x + font->width - 1) / 2);
+            spi_oled_send_cmd(spi_ssd1327, 0x75); // Set row
+            spi_oled_send_cmd(spi_ssd1327, y + row);
+            spi_oled_send_cmd(spi_ssd1327, y + row);
+
+            // Compose pixel data for row
+            uint8_t byte = font->data[offset + row];
+            uint8_t rowdata[(font->width + 1) / 2];
+            for (int i = 0; i < font->width; i += 2)
+            {
+                uint8_t p1 = (byte & (1 << (7 - i))) ? gs : 0;
+                uint8_t p2 = (i + 1 < font->width) && (byte & (1 << (7 - (i + 1)))) ? gs : 0;
+                rowdata[i / 2] = (p1 << 4) | p2;
+            }
+            spi_oled_send_data(spi_ssd1327, rowdata, (font->width + 1) / 2);
+        }
+        x += font->width;
+    }
+}
+
+void spi_oled_drawImage(
+    struct spi_ssd1327 *spi_ssd1327,
+    uint8_t x, uint8_t y,
+    uint8_t width, uint8_t height,
+    const uint8_t *image // packed 4bpp: (width+1)/2 per row
+)
+{
+    spi_oled_send_cmd(spi_ssd1327, 0x15);
+    spi_oled_send_cmd(spi_ssd1327, x / 2);
+    spi_oled_send_cmd(spi_ssd1327, (x + width - 1) / 2);
+    spi_oled_send_cmd(spi_ssd1327, 0x75);
+    spi_oled_send_cmd(spi_ssd1327, y);
+    spi_oled_send_cmd(spi_ssd1327, y + height - 1);
+
+    for (uint8_t row = 0; row < height; ++row)
+    {
+        spi_oled_send_data(spi_ssd1327, &image[row * (width + 1) / 2], (width + 1) / 2);
+    }
+}
+
+// Animation: assumes all frames same w/h
+void spi_oled_drawAnimation(
+    struct spi_ssd1327 *spi_ssd1327,
+    uint8_t x, uint8_t y,
+    uint8_t w, uint8_t h,
+    const uint8_t *frames[], // [frame][data]
+    uint8_t frame_count,
+    uint8_t frame_idx)
+{
+    if (frame_idx < frame_count)
+        spi_oled_drawImage(spi_ssd1327, x, y, w, h, frames[frame_idx]);
+}
+
+/*
+// Static image 16x16
+const uint8_t smiley16x16[16][8] = {}; // Each row = 8 bytes (16 px @ 4bpp)
+
+
+// Animated: 4 frames, 32x16 px
+const uint8_t anim[4][16][16] = {
+    // [frame][row][8 bytes per row]
+    // frame 0 ...
+    // frame 1 ...
+    // ...
+};
+const uint8_t *frames[4] = {
+    (const uint8_t *)anim[0],
+    (const uint8_t *)anim[1],
+    (const uint8_t *)anim[2],
+    (const uint8_t *)anim[3]
+};
+*/

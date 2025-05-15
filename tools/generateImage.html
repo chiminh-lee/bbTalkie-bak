@@ -161,7 +161,10 @@ window.previewFrame = function() {
     let gray = Math.round(y*15);
     let px = Math.round(gray*255/15);
     px = a<128 ? 34 : px;
-    odata[i*4+0]=odata[i*4+1]=odata[i*4+2]=px;
+    // Yellow OLED preview! (pure yellow)
+    odata[i*4+0]=px; // Red
+    odata[i*4+1]=px; // Green
+    odata[i*4+2]=0;  // Blue
     odata[i*4+3]=255;
   }
   ctx.putImageData(oimg,0,0);

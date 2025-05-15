@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Image/GIF to SSD1327 4bpp C Array Exporter (Browser)</title>
+  <title>Image/GIF to SSD1327 4bpp C Array Exporter</title>
   <style>
     body { background:#232323; color:#eee; font-family:sans-serif; }
     h1 { font-size:1.3em; }
@@ -17,10 +17,15 @@
 </head>
 <body>
   <h1>Image/GIF to SSD1327 4bpp C Array Exporter</h1>
-  <label>Upload image/GIF:</label> <input type="file" id="imgLoader" accept="image/*"><br>
-  <label>W × H (px):</label> <input type="number" id="oledW" value="128" style="width:3em;"> x 
-  <input type="number" id="oledH" value="128" style="width:3em;"><br>
-  <label>Brightness γ:</label> <input type="range" id="gamma" min="70" max="160" value="100"> (<span id="gammaval">1.00</span>)
+  <label>Upload image/GIF:</label>
+  <input type="file" id="imgLoader" accept="image/*"><br>
+  <label>Variable name:</label>
+  <input type="text" id="cVarName" value="oled_img" style="width:10em;"><br>
+  <label>W × H (px):</label>
+  <input type="number" id="oledW" value="128" style="width:3em;">
+  x <input type="number" id="oledH" value="128" style="width:3em;"><br>
+  <label>Brightness γ:</label>
+  <input type="range" id="gamma" min="70" max="160" value="100"> (<span id="gammaval">1.00</span>)
   <div class="controls">
     <span id="frameSel"></span>
   </div>
@@ -31,9 +36,10 @@
   <textarea id="cout" readonly placeholder="C output will appear here..."></textarea>
   <div class="tiny">
     <b>How it works:</b><br>
-    - Upload PNG/JPG/BMP for still, or GIF for animation<br>
-    - Animation GIF is supported via omggif (all frames extracted in browser!)<br>
-    - W × H auto-fills to image/GIF size, set smaller to crop (resizes/stretch).<br>
+    - Upload PNG/JPG/BMP for single frame, or GIF for animation<br>
+    - Animated GIF is supported via omggif (all frames extracted in browser!)<br>
+    - W × H auto-fills to image/GIF size; change values to resize/crop (resampling/stretch).<br>
+    - "Variable name" sets the exported C array name.<br>
     - Each frame: <code>[height][width/2]</code> packed (16 grayscale, 2 px per byte).<br>
     - Grayscale auto-calculated from RGB (Y=0.299R+0.587G+0.114B mapped to 0~15).<br>
   </div>
@@ -89,11 +95,8 @@ document.getElementById('imgLoader').onchange = function(e) {
         let can = document.createElement('canvas');
         can.width = w; can.height = h;
         let cctx = can.getContext('2d');
-        // Transparent background:
         cctx.clearRect(0,0,w,h);
-        let lastImage = cctx.getImageData(0,0,w,h);
         for (let i=0;i<n;++i) {
-          // Copy last frame
           let frameImage = cctx.getImageData(0,0,w,h);
           gif.decodeAndBlitFrameRGBA(i, frameImage.data);
           cctx.putImageData(frameImage, 0, 0);
@@ -101,7 +104,6 @@ document.getElementById('imgLoader').onchange = function(e) {
           frames.push({img:copy, dur:gif.frameInfo(i).delay*10});
         }
         curFrame = 0;
-        // Set W/H fields
         document.getElementById('oledW').value = w;
         document.getElementById('oledH').value = h;
         outW = w; outH = h;
@@ -109,7 +111,6 @@ document.getElementById('imgLoader').onchange = function(e) {
         showFrameSel();
         previewFrame();
       } catch (exg) {
-		console.log(exg)
         alert("GIF file decode error.");
       }
     };
@@ -143,7 +144,6 @@ window.previewFrame = function() {
   tmpC.width = outW; tmpC.height= outH;
   let tctx = tmpC.getContext('2d');
   if (isData) {
-    // Draw ImageData natively
     tctx.putImageData(img,0,0);
     if (img.width!==outW || img.height!==outH)
       tctx.drawImage(tmpC, 0,0,img.width,img.height,0,0,outW,outH); // rescale
@@ -170,7 +170,7 @@ window.previewFrame = function() {
 document.getElementById('toCbtn').onclick = function() {
   if (!frames.length) { alert("No image loaded."); return; }
   let nFrames = frames.length;
-  let arrname = 'oled_img';
+  let arrname = document.getElementById('cVarName').value.replace(/[^a-zA-Z0-9_]/g,'_') || "oled_img";
   let W = parseInt(document.getElementById('oledW').value|0);
   let H = parseInt(document.getElementById('oledH').value|0);
   let gamma = document.getElementById('gamma').value/100;

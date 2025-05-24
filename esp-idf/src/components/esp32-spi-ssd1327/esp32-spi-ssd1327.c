@@ -233,11 +233,10 @@ void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x,
     spi_oled_send_cmd(spi_ssd1327, y + 16 - 1);
 
     /* Draw the 16 pixel diameter circle */
-        /* 8 bits per array element * 16 rows * (16 columns / 2 pixels per column) */
-        spi_oled_send_data(spi_ssd1327, &whitecircle16[0], 8 * 16 * (16 / 2));
+    /* 8 bits per array element * 16 rows * (16 columns / 2 pixels per column) */
+    spi_oled_send_data(spi_ssd1327, &whitecircle16[0], 8 * 16 * (16 / 2));
     /* }}} */
 }
-
 
 /*
 const uint8_t font8x8_basic[95][8] = { };
@@ -302,28 +301,36 @@ void spi_oled_drawImage(
     uint8_t image_bytes_per_row = (width + 1) / 2; // Number of bytes for 'width' pixels in the image data
 
     // Ensure image_bytes_per_row is at least 1 if width > 0
-    if (width > 0 && image_bytes_per_row == 0) {
+    if (width > 0 && image_bytes_per_row == 0)
+    {
         image_bytes_per_row = 1;
     }
-    
+
     uint8_t end_col_byte_addr;
-    if (width == 0) { // Handle zero width case
+    if (width == 0)
+    { // Handle zero width case
         end_col_byte_addr = start_col_byte_addr;
-    } else {
+    }
+    else
+    {
         // The end column address for the *write window* is based on how many bytes we send.
         end_col_byte_addr = start_col_byte_addr + image_bytes_per_row - 1;
     }
 
-
     // Clamp addresses to valid GDDRAM range (0-63 for columns, 0-127 for rows)
-    if (start_col_byte_addr > 63) start_col_byte_addr = 63;
-    if (end_col_byte_addr > 63) end_col_byte_addr = 63;
-    if (y > 127) y = 127;
+    if (start_col_byte_addr > 63)
+        start_col_byte_addr = 63;
+    if (end_col_byte_addr > 63)
+        end_col_byte_addr = 63;
+    if (y > 127)
+        y = 127;
     uint8_t end_row_addr = y + height - 1;
-    if (end_row_addr > 127) end_row_addr = 127;
-    if (height == 0) { // If height is 0, nothing to draw.
-         // Or handle as error. If y > end_row_addr due to height being 0,
-         // the loop for r won't run anyway.
+    if (end_row_addr > 127)
+        end_row_addr = 127;
+    if (height == 0)
+    { // If height is 0, nothing to draw.
+        // Or handle as error. If y > end_row_addr due to height being 0,
+        // the loop for r won't run anyway.
         return;
     }
 
@@ -339,8 +346,10 @@ void spi_oled_drawImage(
     for (uint8_t r = 0; r < height; ++r)
     {
         // Check if current row is within display bounds (y+r)
-        if (y + r > end_row_addr) break; // Stop if current row exceeds the calculated end_row_addr
-        if (image_bytes_per_row > 0) { // Only send if there's data for the row
+        if (y + r > end_row_addr)
+            break; // Stop if current row exceeds the calculated end_row_addr
+        if (image_bytes_per_row > 0)
+        { // Only send if there's data for the row
             spi_oled_send_data(spi_ssd1327, &image[r * image_bytes_per_row], (uint32_t)image_bytes_per_row * 8);
         }
     }

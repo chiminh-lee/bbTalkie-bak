@@ -55,6 +55,13 @@
 #include "driver/adc.h"
 #include "soc/adc_channel.h"
 
+#include "led_strip.h"
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
+#include "iot_button.h"
+#include "button_gpio.h"
+
+
 #define SAMPLE_RATE 16000
 #define BIT_DEPTH 16
 #define ENCODED_BUF_SIZE 10240
@@ -71,6 +78,19 @@
 #define RST_PIN_NUM  11
 #define SPI_HOST_TAG SPI2_HOST
 
+#define WS2812_GPIO_PIN     15
+#define WS2812_LED_COUNT    1
+static led_strip_handle_t led_strip;
+
+#define GPIO_WAKEUP_1 GPIO_NUM_4
+#define GPIO_WAKEUP_2 GPIO_NUM_8
+
+
+// Button configuration
+#define BUTTON_GPIO     8  // Boot button on most ESP32 boards
+#define BUTTON_ACTIVE_LEVEL     0   // Active low (pressed = 0)
+#define LONG_PRESS_TIME_MS      2000 // 2 seconds for long press
+
 
 static esp_afe_sr_iface_t *afe_handle = NULL;
 StreamBufferHandle_t play_stream_buf;
@@ -78,6 +98,12 @@ static QueueHandle_t s_recv_queue = NULL;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast MAC address (all ones)
 volatile bool is_receiving = false;
 static const char *TAG = "bbTalkie";
+spi_device_handle_t oled_dev_handle;
+struct spi_ssd1327 spi_ssd1327 = {
+    .dc_pin_num = DC_PIN_NUM,
+    .rst_pin_num = RST_PIN_NUM,
+    .spi_handle = &oled_dev_handle,
+};
 
 // Structure to hold received data
 typedef struct
@@ -505,7 +531,6 @@ void oled_task(void *arg)
         .queue_size = 7,                         // We want to be able to queue 7 transactions at a time
     };
 
-    spi_device_handle_t oled_dev_handle;
     ESP_ERROR_CHECK(spi_bus_add_device(SPI_HOST_TAG, &dev_cfg, &oled_dev_handle));
 
     /* 3. Initialize the remaining GPIO pins */
@@ -523,13 +548,6 @@ void oled_task(void *arg)
     };
     gpio_config(&io_conf2);
 
-    /* 4. Create SSD1327 struct for use of the spi_oled functions */
-    struct spi_ssd1327 spi_ssd1327 = {
-        .dc_pin_num = DC_PIN_NUM,
-        .rst_pin_num = RST_PIN_NUM,
-        .spi_handle = &oled_dev_handle,
-    };
-    /* }}} */
 
     spi_oled_init(&spi_ssd1327);
 
@@ -564,12 +582,77 @@ void batteryLevel_Task(void *pvParameters) {
     adc1_config_width(ADC_WIDTH_BIT_12); // 12-bit resolution
     adc1_config_channel_atten(ADC1_GPIO7_CHANNEL, ADC_ATTEN_DB_11); // Attenuation for full range
 
+    // Configure GPIO4 and GPIO5 as input pull-up pins
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_5), // GPIO4 and GPIO5
+        .mode = GPIO_MODE_INPUT, // Set as input mode
+        .pull_up_en = GPIO_PULLUP_ENABLE, // Enable pull-up
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // Disable pull-down
+        .intr_type = GPIO_INTR_DISABLE // Disable interrupts
+    };
+    gpio_config(&io_conf);
+
     while (1) {
-        int analog_value = adc1_get_raw(ADC1_GPIO7_CHANNEL); // Read analog value
-        ESP_LOGI(TAG, "Analog Value: %d", analog_value); // Print the value
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Delay for 5 seconds
+        // Read analog value from ADC1 channel 7
+        int analog_value = adc1_get_raw(ADC1_GPIO7_CHANNEL);
+
+        // Read digital states of GPIO4 and GPIO5
+        int gpio4_state = gpio_get_level(GPIO_NUM_4);
+        int gpio5_state = gpio_get_level(GPIO_NUM_5);
+
+        // Control LED strip based on GPIO4 state
+        if (gpio4_state == 0) { // GPIO4 is low
+            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 255, 0)); // Set LED to green
+            ESP_ERROR_CHECK(led_strip_refresh(led_strip));
+        } else { // GPIO4 is high
+            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 255)); // Set LED to blue
+            ESP_ERROR_CHECK(led_strip_refresh(led_strip));
+        }
+
+        // Print the values
+        //ESP_LOGI(TAG, "Analog Value: %d, GPIO4 State: %d, GPIO5 State: %d", analog_value, gpio4_state, gpio5_state);
+
+        // Delay for 500 milliseconds
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
+
+void ws2812_init(void)
+{
+    ESP_LOGI(TAG, "Initializing WS2812 LED strip");
+    
+    // LED strip general initialization
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = WS2812_GPIO_PIN,
+        .max_leds = WS2812_LED_COUNT,
+        .led_model = LED_MODEL_WS2812,
+        .flags.invert_out = false,
+    };
+
+    // LED strip RMT configuration
+    led_strip_rmt_config_t rmt_config = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000, // 10MHz
+        .flags.with_dma = false,
+    };
+
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+}
+
+static void button_long_press_cb(void *arg, void *usr_data) {
+    printf("Long press detected! Entering deep sleep mode...");
+    vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
+
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0)); // Set LED to green
+    ESP_ERROR_CHECK(led_strip_refresh(led_strip));
+    
+    // Enter deep sleep
+    gpio_set_level(GPIO_NUM_3, 0);
+    gpio_set_level(GPIO_NUM_9, 0);
+    spi_oled_deinit(&spi_ssd1327);
+    esp_deep_sleep_start();
+}
+
 
 void app_main()
 {
@@ -584,6 +667,7 @@ void app_main()
     ESP_ERROR_CHECK(ret);
 
     init_esp_now();
+    ws2812_init();
 
     ESP_ERROR_CHECK(esp_board_init(SAMPLE_RATE, 1, BIT_DEPTH));
 
@@ -630,6 +714,42 @@ void app_main()
     gpio_set_level(GPIO_NUM_3, 1);
     gpio_set_level(GPIO_NUM_9, 1);
 
+    //wake up
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+
+    // Initialize the button
+    button_config_t btn_cfg = {0};
+    button_gpio_config_t gpio_cfg = {
+        .gpio_num = BUTTON_GPIO,
+        .active_level = BUTTON_ACTIVE_LEVEL,
+        .enable_power_save = true,
+    };
+
+    button_handle_t btn;
+    iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &btn);
+
+    // Register event callbacks
+    iot_button_register_cb(btn, BUTTON_LONG_PRESS_START, NULL, button_long_press_cb, NULL);
+
+    ESP_LOGI(TAG, "Button initialized and ready");
+
+    // Enable wake-up on GPIO4 and GPIO8 when they go low
+    rtc_gpio_pullup_en(GPIO_WAKEUP_1);
+    rtc_gpio_pullup_en(GPIO_WAKEUP_2);
+
+    // Optionally disable pull-downs to ensure clean pull-up
+    rtc_gpio_pulldown_dis(GPIO_WAKEUP_1);
+    rtc_gpio_pulldown_dis(GPIO_WAKEUP_2);
+    esp_sleep_enable_ext1_wakeup((1ULL << GPIO_WAKEUP_2), ESP_EXT1_WAKEUP_ANY_LOW); //(1ULL << GPIO_WAKEUP_1) | 
+
+
     init_audio_stream_buffer();
     // esp_audio_play((int16_t*)m_1, sizeof(m_1), portMAX_DELAY);
     xTaskCreatePinnedToCore(&feed_Task, "feed", 8 * 1024, (void *)afe_data, 5, NULL, 0);
@@ -637,7 +757,6 @@ void app_main()
     //xTaskCreatePinnedToCore(play_audio_task, "music", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(decode_Task, "decode", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
-    //xTaskCreatePinnedToCore(oled_task, "oled", 4 * 1024, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(oled_task, "oled", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL, 0);
-
 }

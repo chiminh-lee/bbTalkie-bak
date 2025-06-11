@@ -105,6 +105,51 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
     /* }}} */
 }
 
+
+void spi_oled_deinit(struct spi_ssd1327 *spi_ssd1327)
+{
+    /* {{{ */
+    
+    /* Clear the display buffer to prevent burn-in */
+    spi_oled_send_cmd(spi_ssd1327, 0xA5); // Entire display ON (all pixels at GS15)
+    
+    /* Small delay to allow display clearing */
+    // Add appropriate delay function here if available
+    // delay_ms(10);
+    
+    /* Turn the display off (datasheet p. 49) */
+    spi_oled_send_cmd(spi_ssd1327, 0xAE);
+    
+    /* Disable Vdd regulator to save power */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xAB, 0x00); // 0000 0000 = Disable
+    
+    /* Set display to sleep mode by setting all voltages to minimum */
+    /* Set Contrast Control to minimum */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0x81, 0x00); // Minimum contrast
+    
+    /* Set Vcomh voltage to minimum (see datasheet p. 39) */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xBE, 0x00); // 0000 0000 = Vcomh = 0.65 * Vcc (minimum)
+    
+    /* Set pre-charge voltage to minimum (phase 2) */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xBC, 0x00); // 0000 0000 = Vp = 0.2 * Vcc (minimum)
+    
+    /* Disable second pre-charge */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xD5, 0x60); // 0110 0000 = disable second precharge, internal VSL
+    
+    /* Set oscillator frequency to minimum to reduce power consumption */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xB3, 0x00); // Minimum frequency = 535kHz
+    
+    /* Set phase periods to minimum */
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xB1, 0x11); // Minimum phase 1 and 2 periods
+    spi_oled_send_cmd_arg(spi_ssd1327, 0xB6, 0x00); // Minimum phase 3 period
+    
+    /* Optional: Assert reset line to ensure complete shutdown */
+    /* This would require access to the reset GPIO pin */
+    /* gpio_set_low(spi_ssd1327->reset_pin); */
+    
+    /* }}} */
+}
+
 void spi_oled_reset(struct spi_ssd1327 *spi_ssd1327)
 {
     /* {{{ */

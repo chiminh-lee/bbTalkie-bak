@@ -37,6 +37,8 @@ typedef struct {
 
 void spi_oled_init(struct spi_ssd1327 *spi_ssd1327);
 
+void spi_oled_deinit(struct spi_ssd1327 *spi_ssd1327);
+
 void spi_oled_reset(struct spi_ssd1327 *spi_ssd1327);
 
 void spi_oled_send_cmd(struct spi_ssd1327 *spi_ssd1327, uint8_t cmd);

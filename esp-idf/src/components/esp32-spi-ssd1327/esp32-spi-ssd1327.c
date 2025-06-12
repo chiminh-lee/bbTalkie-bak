@@ -105,48 +105,47 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
     /* }}} */
 }
 
-
 void spi_oled_deinit(struct spi_ssd1327 *spi_ssd1327)
 {
     /* {{{ */
-    
+
     /* Clear the display buffer to prevent burn-in */
     spi_oled_send_cmd(spi_ssd1327, 0xA5); // Entire display ON (all pixels at GS15)
-    
+
     /* Small delay to allow display clearing */
     // Add appropriate delay function here if available
     // delay_ms(10);
-    
+
     /* Turn the display off (datasheet p. 49) */
     spi_oled_send_cmd(spi_ssd1327, 0xAE);
-    
+
     /* Disable Vdd regulator to save power */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xAB, 0x00); // 0000 0000 = Disable
-    
+
     /* Set display to sleep mode by setting all voltages to minimum */
     /* Set Contrast Control to minimum */
     spi_oled_send_cmd_arg(spi_ssd1327, 0x81, 0x00); // Minimum contrast
-    
+
     /* Set Vcomh voltage to minimum (see datasheet p. 39) */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xBE, 0x00); // 0000 0000 = Vcomh = 0.65 * Vcc (minimum)
-    
+
     /* Set pre-charge voltage to minimum (phase 2) */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xBC, 0x00); // 0000 0000 = Vp = 0.2 * Vcc (minimum)
-    
+
     /* Disable second pre-charge */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xD5, 0x60); // 0110 0000 = disable second precharge, internal VSL
-    
+
     /* Set oscillator frequency to minimum to reduce power consumption */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xB3, 0x00); // Minimum frequency = 535kHz
-    
+
     /* Set phase periods to minimum */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xB1, 0x11); // Minimum phase 1 and 2 periods
     spi_oled_send_cmd_arg(spi_ssd1327, 0xB6, 0x00); // Minimum phase 3 period
-    
+
     /* Optional: Assert reset line to ensure complete shutdown */
     /* This would require access to the reset GPIO pin */
     /* gpio_set_low(spi_ssd1327->reset_pin); */
-    
+
     /* }}} */
 }
 
@@ -295,57 +294,159 @@ font_t font8x8 = {
 
 void spi_oled_drawText(
     struct spi_ssd1327 *spi_ssd1327,
-    uint8_t x, uint8_t y,
+    uint8_t x_start, uint8_t y_start,
     const variable_font_t *font,
-    ssd1327_gs_t gs,
-    const char *text)
+    ssd1327_gs_t gs_main,
+    const char *text,
+    bool with_shadow) // New parameter
 {
-    while (*text) {
-        char c = *text++;
-        if (c < 32 || c > 126) continue;
-        
+    // Ensure grayscale values are within 0-15
+    gs_main &= 0x0F;
+    ssd1327_gs_t gs_shadow = (gs_main / 2) & 0x0F; // Half grayscale for shadow
+
+    // Calculate total width of the text to determine the buffer size needed
+    uint16_t total_text_width = 0;
+    const char *temp_text = text;
+    while (*temp_text)
+    {
+        char c = *temp_text++;
+        if (c < 32 || c > 126)
+            continue;
         uint8_t char_idx = c - 32;
-        uint8_t char_width = font->widths[char_idx];
-        uint16_t data_offset = font->offsets[char_idx];
-        uint8_t bytes_per_row = (char_width + 7) / 8;
-        
-        // Render each row of the character
-        for (uint8_t row = 0; row < font->height; ++row) {
-            // Set column address window
-            spi_oled_send_cmd(spi_ssd1327, 0x15);
-            spi_oled_send_cmd(spi_ssd1327, x / 2);
-            spi_oled_send_cmd(spi_ssd1327, (x + char_width - 1) / 2);
-            
-            // Set row address window
-            spi_oled_send_cmd(spi_ssd1327, 0x75);
-            spi_oled_send_cmd(spi_ssd1327, y + row);
-            spi_oled_send_cmd(spi_ssd1327, y + row);
-            
-            // Convert 1-bit to 4-bit grayscale data
-            uint8_t rowdata[(char_width + 1) / 2];
-            
-            for (uint8_t col = 0; col < char_width; col += 2) {
-                uint8_t byte_idx = col / 8;
-                uint8_t bit_idx = col % 8;
-                uint8_t font_byte = font->data[data_offset + row * bytes_per_row + byte_idx];
-                
-                uint8_t p1 = (font_byte & (1 << (7 - bit_idx))) ? gs : 0;
-                uint8_t p2 = 0;
-                
-                if (col + 1 < char_width) {
-                    uint8_t byte_idx2 = (col + 1) / 8;
-                    uint8_t bit_idx2 = (col + 1) % 8;
-                    uint8_t font_byte2 = font->data[data_offset + row * bytes_per_row + byte_idx2];
-                    p2 = (font_byte2 & (1 << (7 - bit_idx2))) ? gs : 0;
+        total_text_width += font->widths[char_idx] + 1; // Character width + spacing
+    }
+    if (total_text_width > 0)
+    {
+        total_text_width -= 1; // Remove last spacing
+    }
+
+    // Determine the actual drawing width, limited by display and starting position
+    // We need to account for both main text and shadow positions if shadow is enabled
+    uint16_t draw_start_x;
+    if (with_shadow)
+    {
+        draw_start_x = x_start - 1; // Shadow starts one pixel to the left
+        if (draw_start_x > x_start)
+            draw_start_x = 0; // Handle underflow if x_start is 0
+    }
+    else
+    {
+        draw_start_x = x_start;
+    }
+
+    uint16_t draw_end_x = x_start + total_text_width - 1;
+    // Ensure draw_end_x doesn't go beyond display width
+    if (draw_end_x >= MAX_DISPLAY_WIDTH_PX)
+    {
+        draw_end_x = MAX_DISPLAY_WIDTH_PX - 1;
+    }
+
+    // The actual number of bytes we will send per row
+    // Each byte holds two pixels (4-bit grayscale)
+    uint16_t num_pixels_to_draw = (draw_end_x - draw_start_x) + 1;
+    uint16_t num_bytes_to_send_per_row = (num_pixels_to_draw + 1) / 2; // +1 for odd pixel count
+
+    // Ensure the byte count does not exceed the buffer size
+    if (num_bytes_to_send_per_row > MAX_ROW_DATA_BYTES)
+    {
+        num_bytes_to_send_per_row = MAX_ROW_DATA_BYTES;
+    }
+
+    // Buffer to hold the combined pixel data for one row
+    uint8_t row_data_buffer[MAX_ROW_DATA_BYTES];
+
+    // Render each row of the text (height of the font)
+    for (uint8_t row = 0; row < font->height; ++row)
+    {
+        // Initialize row data buffer to all zeros (black)
+        memset(row_data_buffer, 0, num_bytes_to_send_per_row);
+
+        uint8_t current_x_main = x_start;
+        uint8_t current_x_shadow = x_start - 1; // Shadow position
+
+        const char *char_ptr = text;
+        while (*char_ptr)
+        {
+            char c = *char_ptr++;
+            if (c < 32 || c > 126)
+                continue;
+
+            uint8_t char_idx = c - 32;
+            uint8_t char_width = font->widths[char_idx];
+            uint16_t data_offset = font->offsets[char_idx];
+            uint8_t bytes_per_font_row = (char_width + 7) / 8;
+
+            // Iterate through each pixel column of the current character
+            for (uint8_t col = 0; col < char_width; ++col)
+            {
+                uint8_t byte_in_font = font->data[data_offset + row * bytes_per_font_row + (col / 8)];
+                uint8_t bit_in_byte = 7 - (col % 8); // Fonts usually store MSB first
+
+                uint8_t is_pixel_set = (byte_in_font >> bit_in_byte) & 0x01;
+
+                // --- Render Shadow Pixel (if enabled) ---
+                if (with_shadow && is_pixel_set)
+                {
+                    int16_t abs_col_shadow = current_x_shadow + col;
+                    // Check if shadow pixel is within the active drawing area
+                    if (abs_col_shadow >= draw_start_x && abs_col_shadow <= draw_end_x)
+                    {
+                        uint8_t byte_idx_buffer = (abs_col_shadow - draw_start_x) / 2;
+                        if (byte_idx_buffer < num_bytes_to_send_per_row)
+                        {
+                            if (abs_col_shadow % 2 == 0)
+                            { // Even pixel (left nibble)
+                                row_data_buffer[byte_idx_buffer] = (row_data_buffer[byte_idx_buffer] & 0x0F) | (gs_shadow << 4);
+                            }
+                            else
+                            { // Odd pixel (right nibble)
+                                row_data_buffer[byte_idx_buffer] = (row_data_buffer[byte_idx_buffer] & 0xF0) | gs_shadow;
+                            }
+                        }
+                    }
                 }
-                
-                rowdata[col / 2] = (p1 << 4) | p2;
+
+                // --- Render Main Text Pixel ---
+                if (is_pixel_set)
+                { // Always draw main text
+                    int16_t abs_col_main = current_x_main + col;
+                    // Check if main pixel is within the active drawing area
+                    if (abs_col_main >= draw_start_x && abs_col_main <= draw_end_x)
+                    {
+                        uint8_t byte_idx_buffer = (abs_col_main - draw_start_x) / 2;
+                        if (byte_idx_buffer < num_bytes_to_send_per_row)
+                        {
+                            if (abs_col_main % 2 == 0)
+                            { // Even pixel (left nibble)
+                                row_data_buffer[byte_idx_buffer] = (row_data_buffer[byte_idx_buffer] & 0x0F) | (gs_main << 4);
+                            }
+                            else
+                            { // Odd pixel (right nibble)
+                                row_data_buffer[byte_idx_buffer] = (row_data_buffer[byte_idx_buffer] & 0xF0) | gs_main;
+                            }
+                        }
+                    }
+                }
             }
-            
-            spi_oled_send_data(spi_ssd1327, rowdata, ((char_width + 1) / 2) * 8);
+            current_x_main += char_width + 1;   // Move to next character position (main text)
+            current_x_shadow += char_width + 1; // Move to next character position (shadow)
         }
-        
-        x += char_width + 1; // Add 1 pixel spacing between characters
+
+        // After processing all characters for the current row, send the combined data
+        // Set column address window for the entire drawing width
+        spi_oled_send_cmd(spi_ssd1327, 0x15);
+        spi_oled_send_cmd(spi_ssd1327, draw_start_x / 2);
+        // The end column command takes the physical column address, not the byte index.
+        // It's (end_pixel_column + 1) / 2 - 1 according to some docs, or just end_pixel_column / 2.
+        // Let's ensure it's `(actual_end_pixel_column_on_display) / 2`.
+        spi_oled_send_cmd(spi_ssd1327, draw_end_x / 2);
+
+        // Set row address window for the current row
+        spi_oled_send_cmd(spi_ssd1327, 0x75);
+        spi_oled_send_cmd(spi_ssd1327, y_start + row);
+        spi_oled_send_cmd(spi_ssd1327, y_start + row);
+
+        spi_oled_send_data(spi_ssd1327, row_data_buffer, num_bytes_to_send_per_row);
     }
 }
 

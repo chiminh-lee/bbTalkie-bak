@@ -56,11 +56,10 @@ void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y)
 // Draw a text string on the OLED using a font
 void spi_oled_drawText(
     struct spi_ssd1327 *spi_ssd1327,
-    uint8_t x_start, uint8_t y_start,
+    uint8_t x, uint8_t y,
     const variable_font_t *font,
-    ssd1327_gs_t gs_main,
-    const char *text,
-    bool with_shadow);
+    ssd1327_gs_t gs,
+    const char *text);
 
 // Draw a grayscale image (4bpp) on the OLED
 void spi_oled_drawImage(

@@ -61,6 +61,17 @@ void spi_oled_drawText(
     ssd1327_gs_t gs,
     const char *text);
 
+// 带阴影效果的文本绘制函数
+void spi_oled_drawTextWithShadow(
+    struct spi_ssd1327 *spi_ssd1327,
+    uint8_t x, uint8_t y,
+    const variable_font_t *font,
+    ssd1327_gs_t gs,        // 主文本灰阶
+    ssd1327_gs_t gs_shadow, // 阴影灰阶
+    int8_t offset_x,        // 阴影X偏移（可以为负值）
+    int8_t offset_y,        // 阴影Y偏移（可以为负值）
+    const char *text);
+
 // Draw a grayscale image (4bpp) on the OLED
 void spi_oled_drawImage(
     struct spi_ssd1327 *spi_ssd1327,
@@ -71,7 +82,8 @@ void spi_oled_drawImage(
     const uint8_t *image // packed 4bpp: (width+1)/2 per row
 );
 
-typedef struct {
+typedef struct
+{
     struct spi_ssd1327 *spi_ssd1327;
     uint8_t x, y, width, height;
     uint8_t frame_count;

@@ -7,26 +7,6 @@
 
 #include "esp32-spi-ssd1327.h"
 
-#define MAX_DISPLAY_WIDTH_PX 128
-#define MAX_ROW_DATA_BYTES (MAX_DISPLAY_WIDTH_PX / 2) // Each byte holds 2 pixels
-
-uint8_t whitecircle16[128] = {0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00,
-                              0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
-                              0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                              0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf0,
-                              0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-                              0x00, 0x0f, 0xff, 0xff, 0xff, 0xff, 0xf0, 0x00,
-                              0x00, 0x00, 0x0f, 0xff, 0xff, 0xf0, 0x00, 0x00};
-
 void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
 {
     /* {{{ */
@@ -50,10 +30,7 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
 
     /* Set Re-map: (Tell device how to handle data writes)
      * (See datasheet p. 36, 43).
-     * It's worth noting here that to resolve the issue I was experiencing
-     * where whatever was drawn was interlaced and spread over twice its actual
-     * height is resolved by ensuring that some of these A[x] vars "in line".
-     * In particular, look at A[6] */
+     */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xA0, 0x51);
 
     /* Set Display Start Line: 0 (See datasheet p. 47) */
@@ -61,19 +38,6 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
 
     /* Set Display Offset: 0 (See datasheet p. 47) */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xA2, 0x00); // = 0
-
-    /**
-     * Phase 1: the pixel is reset to Vlss (relative low) in order to discharge
-     *          previous data (higher capacitance of the OLED = phase 1's
-     *          period should be longer)
-     * Phase 2: first pre-charge: the pixel receives voltage going to Vp
-     *          (higher capacitance of the OLED = phase 2's period should be
-     *          longer)
-     * Phase 3: second pre-charge: the pixel receives voltage to get from Vp to
-     *          Vcomh
-     * Phase 4: PWM: the pixel holds Vcomh voltage for a given amount of time
-     *          to maintain a given brightness
-     */
 
     /* Set the oscillator frequency and the front clock divider ratio */
     spi_oled_send_cmd_arg(spi_ssd1327, 0xB3, 0x51); // = 0 1 -> Fosc=((7/15 * (655kHz - 535kHz)) + 535kHz)? D=0+1=2
@@ -295,6 +259,218 @@ font_t font8x8 = {
 };
 */
 
+void spi_oled_drawTextWithShadow(
+    struct spi_ssd1327 *spi_ssd1327,
+    uint8_t x, uint8_t y,
+    const variable_font_t *font,
+    ssd1327_gs_t gs,
+    ssd1327_gs_t gs_shadow,
+    int8_t offset_x,
+    int8_t offset_y,
+    const char *text)
+{
+    if (!text || !*text)
+        return;
+
+    // 计算文本整体尺寸
+    uint16_t total_width = 0;
+    const char *temp_text = text;
+    while (*temp_text)
+    {
+        char c = *temp_text++;
+        if (c >= 32 && c <= 126)
+        {
+            uint8_t char_idx = c - 32;
+            total_width += font->widths[char_idx] + 1; // +1 for spacing
+        }
+    }
+    if (total_width > 0)
+        total_width--; // 移除最后一个字符后的间距
+
+    // 计算包含阴影的总边界框
+    int16_t min_x = (offset_x < 0) ? offset_x : 0;
+    int16_t min_y = (offset_y < 0) ? offset_y : 0;
+    int16_t max_x = (offset_x > 0) ? total_width + offset_x : total_width;
+    int16_t max_y = (offset_y > 0) ? font->height + offset_y : font->height;
+
+    uint16_t buffer_width = max_x - min_x;
+    uint16_t buffer_height = max_y - min_y;
+    uint16_t buffer_bytes_per_row = (buffer_width + 1) / 2;
+
+    // 创建缓冲区（初始化为0）
+    uint8_t *buffer = calloc(buffer_height * buffer_bytes_per_row, sizeof(uint8_t));
+    if (!buffer)
+        return;
+
+    // 设置像素的辅助函数
+    auto set_pixel = [&](int16_t px, int16_t py, ssd1327_gs_t value)
+    {
+        if (px < 0 || py < 0 || px >= buffer_width || py >= buffer_height)
+            return;
+
+        uint16_t byte_idx = py * buffer_bytes_per_row + px / 2;
+        uint8_t pixel_pos = px % 2;
+
+        if (pixel_pos == 0)
+        { // 左像素（高4位）
+            uint8_t current_right = buffer[byte_idx] & 0x0F;
+            uint8_t new_left = (buffer[byte_idx] >> 4) | value; // 使用OR来合并
+            if (new_left > 15)
+                new_left = 15; // 防止溢出
+            buffer[byte_idx] = (new_left << 4) | current_right;
+        }
+        else
+        { // 右像素（低4位）
+            uint8_t current_left = buffer[byte_idx] & 0xF0;
+            uint8_t new_right = (buffer[byte_idx] & 0x0F) | value; // 使用OR来合并
+            if (new_right > 15)
+                new_right = 15; // 防止溢出
+            buffer[byte_idx] = current_left | new_right;
+        }
+    };
+
+    // 渲染文本的辅助函数
+    auto render_text = [&](int16_t text_x, int16_t text_y, ssd1327_gs_t color)
+    {
+        uint16_t char_x = text_x;
+        const char *str = text;
+
+        while (*str)
+        {
+            char c = *str++;
+            if (c < 32 || c > 126)
+                continue;
+
+            uint8_t char_idx = c - 32;
+            uint8_t char_width = font->widths[char_idx];
+            uint16_t data_offset = font->offsets[char_idx];
+            uint8_t bytes_per_row = (char_width + 7) / 8;
+
+            // 渲染字符的每一行
+            for (uint8_t row = 0; row < font->height; ++row)
+            {
+                for (uint8_t col = 0; col < char_width; ++col)
+                {
+                    uint8_t byte_idx = col / 8;
+                    uint8_t bit_idx = col % 8;
+                    uint8_t font_byte = font->data[data_offset + row * bytes_per_row + byte_idx];
+
+                    if (font_byte & (1 << (7 - bit_idx)))
+                    {
+                        int16_t px = char_x + col - min_x;
+                        int16_t py = text_y + row - min_y;
+                        set_pixel(px, py, color);
+                    }
+                }
+            }
+
+            char_x += char_width + 1; // 字符间距
+        }
+    };
+
+    // 先渲染阴影（如果阴影灰度值大于0）
+    if (gs_shadow > 0)
+    {
+        render_text(offset_x, offset_y, gs_shadow);
+    }
+
+    // 再渲染主文本
+    render_text(0, 0, gs);
+
+    // 计算在显示器上的实际绘制位置和尺寸
+    int16_t draw_x = x + min_x;
+    int16_t draw_y = y + min_y;
+
+    // 边界检查
+    if (draw_x >= 128 || draw_y >= 128 ||
+        draw_x + buffer_width <= 0 || draw_y + buffer_height <= 0)
+    {
+        free(buffer);
+        return;
+    }
+
+    // 调整绘制区域以适应显示器边界
+    uint16_t skip_left = 0, skip_top = 0;
+    uint16_t draw_width = buffer_width, draw_height = buffer_height;
+
+    if (draw_x < 0)
+    {
+        skip_left = -draw_x;
+        draw_width -= skip_left;
+        draw_x = 0;
+    }
+    if (draw_y < 0)
+    {
+        skip_top = -draw_y;
+        draw_height -= skip_top;
+        draw_y = 0;
+    }
+    if (draw_x + draw_width > 128)
+    {
+        draw_width = 128 - draw_x;
+    }
+    if (draw_y + draw_height > 128)
+    {
+        draw_height = 128 - draw_y;
+    }
+
+    // 发送到显示器
+    uint8_t start_col = draw_x / 2;
+    uint8_t end_col = (draw_x + draw_width - 1) / 2;
+
+    spi_oled_send_cmd(spi_ssd1327, 0x15);
+    spi_oled_send_cmd(spi_ssd1327, start_col);
+    spi_oled_send_cmd(spi_ssd1327, end_col);
+
+    spi_oled_send_cmd(spi_ssd1327, 0x75);
+    spi_oled_send_cmd(spi_ssd1327, draw_y);
+    spi_oled_send_cmd(spi_ssd1327, draw_y + draw_height - 1);
+
+    // 发送每一行数据
+    uint16_t bytes_to_send = end_col - start_col + 1;
+    for (uint16_t row = 0; row < draw_height; ++row)
+    {
+        uint16_t src_row = row + skip_top;
+        uint16_t src_offset = src_row * buffer_bytes_per_row + skip_left / 2;
+
+        // 处理奇数起始位置的像素对齐
+        if (skip_left % 2 == 1)
+        {
+            // 需要重新打包数据
+            uint8_t *row_data = malloc(bytes_to_send);
+            for (uint16_t i = 0; i < bytes_to_send; ++i)
+            {
+                uint8_t left_pixel, right_pixel;
+
+                // 左像素来自当前字节的右半部分
+                left_pixel = buffer[src_offset + i] & 0x0F;
+
+                // 右像素来自下一个字节的左半部分（如果存在）
+                if (src_offset + i + 1 < buffer_height * buffer_bytes_per_row)
+                {
+                    right_pixel = (buffer[src_offset + i + 1] >> 4) & 0x0F;
+                }
+                else
+                {
+                    right_pixel = 0;
+                }
+
+                row_data[i] = (left_pixel << 4) | right_pixel;
+            }
+            spi_oled_send_data(spi_ssd1327, row_data, bytes_to_send * 8);
+            free(row_data);
+        }
+        else
+        {
+            // 直接发送数据
+            spi_oled_send_data(spi_ssd1327, &buffer[src_offset], bytes_to_send * 8);
+        }
+    }
+
+    free(buffer);
+}
+
+// 保留原始函数作为无阴影版本
 void spi_oled_drawText(
     struct spi_ssd1327 *spi_ssd1327,
     uint8_t x, uint8_t y,
@@ -302,55 +478,8 @@ void spi_oled_drawText(
     ssd1327_gs_t gs,
     const char *text)
 {
-    while (*text) {
-        char c = *text++;
-        if (c < 32 || c > 126) continue;
-        
-        uint8_t char_idx = c - 32;
-        uint8_t char_width = font->widths[char_idx];
-        uint16_t data_offset = font->offsets[char_idx];
-        uint8_t bytes_per_row = (char_width + 7) / 8;
-        
-        // Render each row of the character
-        for (uint8_t row = 0; row < font->height; ++row) {
-            // Set column address window
-            spi_oled_send_cmd(spi_ssd1327, 0x15);
-            spi_oled_send_cmd(spi_ssd1327, x / 2);
-            spi_oled_send_cmd(spi_ssd1327, (x + char_width - 1) / 2);
-            
-            // Set row address window
-            spi_oled_send_cmd(spi_ssd1327, 0x75);
-            spi_oled_send_cmd(spi_ssd1327, y + row);
-            spi_oled_send_cmd(spi_ssd1327, y + row);
-            
-            // Convert 1-bit to 4-bit grayscale data
-            uint8_t rowdata[(char_width + 1) / 2];
-            
-            for (uint8_t col = 0; col < char_width; col += 2) {
-                uint8_t byte_idx = col / 8;
-                uint8_t bit_idx = col % 8;
-                uint8_t font_byte = font->data[data_offset + row * bytes_per_row + byte_idx];
-                
-                uint8_t p1 = (font_byte & (1 << (7 - bit_idx))) ? gs : 0;
-                uint8_t p2 = 0;
-                
-                if (col + 1 < char_width) {
-                    uint8_t byte_idx2 = (col + 1) / 8;
-                    uint8_t bit_idx2 = (col + 1) % 8;
-                    uint8_t font_byte2 = font->data[data_offset + row * bytes_per_row + byte_idx2];
-                    p2 = (font_byte2 & (1 << (7 - bit_idx2))) ? gs : 0;
-                }
-                
-                rowdata[col / 2] = (p1 << 4) | p2;
-            }
-            
-            spi_oled_send_data(spi_ssd1327, rowdata, ((char_width + 1) / 2) * 8);
-        }
-        
-        x += char_width + 1; // Add 1 pixel spacing between characters
-    }
+    spi_oled_drawTextWithShadow(spi_ssd1327, x, y, font, gs, 0, 0, 0, text);
 }
-
 
 void spi_oled_drawImage(
     struct spi_ssd1327 *spi_ssd1327,
@@ -418,19 +547,3 @@ void spi_oled_drawImage(
         }
     }
 }
-/*
-
-// Animated: 4 frames, 32x16 px
-const uint8_t anim[4][16][16] = {
-    // [frame][row][8 bytes per row]
-    // frame 0 ...
-    // frame 1 ...
-    // ...
-};
-const uint8_t *frames[4] = {
-    (const uint8_t *)anim[0],
-    (const uint8_t *)anim[1],
-    (const uint8_t *)anim[2],
-    (const uint8_t *)anim[3]
-};
-*/

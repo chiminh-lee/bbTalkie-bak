@@ -92,6 +92,20 @@ static led_strip_handle_t led_strip;
 #define BUTTON_ACTIVE_LEVEL 0   // Active low (pressed = 0)
 #define LONG_PRESS_TIME_MS 2000 // 2 seconds for long press
 
+#define PING_MAGIC "PING"
+#define PING_MAGIC_LEN 4
+#define MAX_MAC_TRACK 16
+#define MAC_TIMEOUT_MS 20000
+
+typedef struct
+{
+    uint8_t mac[ESP_NOW_ETH_ALEN]; // 6 bytes
+    int64_t last_seen_ms;          // Timestamp in ms
+    bool valid;
+} mac_track_entry_t;
+
+static mac_track_entry_t mac_track_list[MAX_MAC_TRACK];
+
 const variable_font_t font_10 = {
     .height = 10,
     .widths = font_10_widths,
@@ -149,7 +163,40 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
     ESP_ERROR_CHECK(esp_wifi_connectionless_module_set_wake_interval(0));
     ESP_LOGI(TAG, "Received %d bytes", data_len);
 
-    // Store in queue if available
+    if (data_len == PING_MAGIC_LEN && memcmp(data, PING_MAGIC, PING_MAGIC_LEN) == 0) // PING MSG
+    {
+        int64_t now = esp_timer_get_time() / 1000; // ms
+        bool found = false;
+
+        for (int i = 0; i < MAX_MAC_TRACK; ++i)
+        {
+            if (mac_track_list[i].valid &&
+                memcmp(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN) == 0)
+            {
+                mac_track_list[i].last_seen_ms = now;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            for (int i = 0; i < MAX_MAC_TRACK; ++i)
+            {
+                if (!mac_track_list[i].valid)
+                {
+                    memcpy(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN);
+                    mac_track_list[i].last_seen_ms = now;
+                    mac_track_list[i].valid = true;
+                    ESP_LOGI(TAG, "Added MAC from ping:");
+                    print_mac(recv_info->src_addr);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Others MSG, Store in queue if available
     if (s_recv_queue != NULL)
     {
         esp_now_recv_data_t recv_data;

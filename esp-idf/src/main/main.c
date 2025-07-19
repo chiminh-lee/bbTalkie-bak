@@ -195,9 +195,48 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
             }
         }
     }
+    // CMD: prefix handling
+    else if (data_len >= 4 && memcmp(data, "CMD:", 4) == 0)
+    {
+        if (data_len >= 5)
+        {
+            // Extract the command parameter after "CMD:"
+            char cmd_param[32]; // Adjust size as needed
+            int param_len = data_len - 4;
+            if (param_len >= sizeof(cmd_param))
+            {
+                param_len = sizeof(cmd_param) - 1;
+            }
+            memcpy(cmd_param, data + 4, param_len);
+            cmd_param[param_len] = '\0';
 
+            // Convert to integer and call function
+            int cmd_value = atoi(cmd_param);
+            // doFunction(cmd_value);
+            ESP_LOGI(TAG, "Processed CMD: %d", cmd_value);
+        }
+    }
+    // MSG: prefix handling
+    else if (data_len >= 4 && memcmp(data, "MSG:", 4) == 0)
+    {
+        if (data_len >= 5)
+        {
+            // Extract the message content after "MSG:"
+            char msg_content[ESP_NOW_MAX_DATA_LEN_V2]; // Adjust size as needed
+            int content_len = data_len - 4;
+            if (content_len >= sizeof(msg_content))
+            {
+                content_len = sizeof(msg_content) - 1;
+            }
+            memcpy(msg_content, data + 4, content_len);
+            msg_content[content_len] = '\0';
+
+            // doFunction2(msg_content);
+            ESP_LOGI(TAG, "Processed MSG: %s", msg_content);
+        }
+    }
     // Others MSG, Store in queue if available
-    if (s_recv_queue != NULL)
+    else if (s_recv_queue != NULL)
     {
         esp_now_recv_data_t recv_data;
 

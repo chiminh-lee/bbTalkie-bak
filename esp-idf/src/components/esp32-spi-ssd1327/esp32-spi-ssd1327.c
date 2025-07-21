@@ -7,15 +7,6 @@
 
 #include "esp32-spi-ssd1327.h"
 
-// Frame buffer structure
-typedef struct
-{
-    uint8_t *buffer;        // 128x128 display = 64x128 bytes (4bpp)
-    uint16_t width;         // 128 pixels
-    uint16_t height;        // 128 pixels
-    uint16_t bytes_per_row; // 64 bytes per row
-} ssd1327_framebuffer_t;
-
 void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
 {
     /* {{{ */
@@ -256,6 +247,27 @@ void spi_oled_draw_circle(struct spi_ssd1327 *spi_ssd1327, uint8_t x,
     /* 8 bits per array element * 16 rows * (16 columns / 2 pixels per column) */
     spi_oled_send_data(spi_ssd1327, &whitecircle16[0], 8 * 16 * (16 / 2));
     /* }}} */
+}
+
+// Initialize frame buffer
+ssd1327_framebuffer_t *spi_oled_framebuffer_create(void)
+{
+    ssd1327_framebuffer_t *fb = malloc(sizeof(ssd1327_framebuffer_t));
+    if (!fb)
+        return NULL;
+
+    fb->width = 128;
+    fb->height = 128;
+    fb->bytes_per_row = 64; // 128 pixels / 2 pixels per byte
+
+    fb->buffer = calloc(fb->height * fb->bytes_per_row, sizeof(uint8_t));
+    if (!fb->buffer)
+    {
+        free(fb);
+        return NULL;
+    }
+
+    return fb;
 }
 
 void spi_oled_framebuffer_destroy(ssd1327_framebuffer_t *fb)

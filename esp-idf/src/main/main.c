@@ -691,6 +691,7 @@ void oled_task(void *arg)
     };
     gpio_config(&io_conf2);
 
+    ssd1327_framebuffer_t *fb = spi_oled_framebuffer_create();
     spi_oled_init(&spi_ssd1327);
 
     printf("screen is on\n");

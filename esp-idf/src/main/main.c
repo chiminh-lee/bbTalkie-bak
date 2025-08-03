@@ -611,7 +611,6 @@ static void animation_task(void *pvParameters)
     spi_oled_animation_t *anim = (spi_oled_animation_t *)pvParameters;
     uint8_t current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-
     while (anim->isPlaying == true)
     {
         // Calculate frame data offset
@@ -639,14 +638,13 @@ static void animation_task(void *pvParameters)
 
         vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
     }
-
-    // Task runs forever in loop - no cleanup needed
     vTaskDelete(NULL);
 }
 
 void draw_status()
 {
-    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_6, "bbTalkie");
+    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_6, "bbTalkie");
+    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie");
     spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high);
     spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on);
     spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4);
@@ -699,7 +697,7 @@ void oled_task(void *arg)
     spi_oled_drawImage(&spi_ssd1327, 0, 0, 128, 128, (const uint8_t *)logo);
     printf("logo is painted\n");
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    spi_oled_draw_square(&spi_ssd1327, 0, 0, 128, 128, SSD1327_GS_0);
+    spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     draw_status();
 
     spi_oled_animation_t *anim = malloc(sizeof(spi_oled_animation_t));
@@ -719,7 +717,7 @@ void oled_task(void *arg)
     // Initialize parameters
     anim_idleBar->spi_ssd1327 = &spi_ssd1327;
     anim_idleBar->x = 10;
-    anim_idleBar->y = 90;
+    anim_idleBar->y = 95;
     anim_idleBar->width = 101;
     anim_idleBar->height = 12;
     anim_idleBar->frame_count = 14;
@@ -731,7 +729,7 @@ void oled_task(void *arg)
     // Initialize parameters
     anim_waveBar->spi_ssd1327 = &spi_ssd1327;
     anim_waveBar->x = 10;
-    anim_waveBar->y = 90;
+    anim_waveBar->y = 85;
     anim_waveBar->width = 100;
     anim_waveBar->height = 32;
     anim_waveBar->frame_count = 30;
@@ -740,6 +738,8 @@ void oled_task(void *arg)
     anim_waveBar->task_handle = NULL;
 
     draw_status();
+
+    bool isFirstBoot = true;
 
     while (1)
     {
@@ -770,7 +770,10 @@ void oled_task(void *arg)
                 anim->isPlaying = true;
                 anim_idleBar->isPlaying = true;
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim, 5, &anim->task_handle);
-                xTaskCreate(animation_task, "idleBarAnim", 2048, anim_idleBar, 5, &anim_idleBar->task_handle);
+                if(isFirstBoot) {
+                    xTaskCreate(animation_task, "idleBarAnim", 2048, anim_idleBar, 5, &anim_idleBar->task_handle);
+                    isFirstBoot = false;
+                }
                 printf("Idle job create\n");
                 break;
             case 1: // Speaking

@@ -89,5 +89,6 @@ typedef struct
     uint8_t frame_count;
     const uint8_t *animation_data;
     uint32_t frame_delay_ms;
+    bool isPlaying;
     TaskHandle_t task_handle;
 } spi_oled_animation_t;

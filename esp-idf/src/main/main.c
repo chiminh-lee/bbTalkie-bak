@@ -612,7 +612,7 @@ static void animation_task(void *pvParameters)
     uint8_t current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
 
-    while (1)
+    while (anim->isPlaying == true)
     {
         // Calculate frame data offset
         const uint8_t *frame_data = anim->animation_data +
@@ -743,7 +743,7 @@ void oled_task(void *arg)
 
     while (1)
     {
-        vTaskDelay(1500 / portTICK_PERIOD_MS);
+        
         if (is_command)
         {
             state = 3;
@@ -766,42 +766,31 @@ void oled_task(void *arg)
             switch (state)
             {
             case 0: // Idle
-                if (anim_waveBar->task_handle != NULL)
-                {
-                    vTaskDelete(anim_waveBar->task_handle);
-                    anim_waveBar->task_handle = NULL;
-                }
-                if (anim->task_handle != NULL)
-                {
-                    vTaskDelete(anim->task_handle);
-                    anim->task_handle = NULL;
-                }
+                anim_waveBar->isPlaying = false;
+                anim->isPlaying = true;
+                anim_idleBar->isPlaying = true;
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim, 5, &anim->task_handle);
                 xTaskCreate(animation_task, "idleBarAnim", 2048, anim_idleBar, 5, &anim_idleBar->task_handle);
                 printf("Idle job create\n");
                 break;
             case 1: // Speaking
                 // stop idleBarAnim
-                if (anim_idleBar->task_handle != NULL)
-                {
-                    vTaskDelete(anim_idleBar->task_handle);
-                    anim_idleBar->task_handle = NULL;
-                }
+                anim->isPlaying = false;
+                anim_idleBar->isPlaying = false;
+                anim_waveBar->isPlaying = true;
                 xTaskCreate(animation_task, "waveBarAnim", 2048, anim_waveBar, 5, &anim_waveBar->task_handle);
                 break;
             case 2: // Receiving
                 break;
             case 3: // Command
                 // stop idleBarAnim
-                if (anim_idleBar->task_handle != NULL)
-                {
-                    vTaskDelete(anim_idleBar->task_handle);
-                    anim_idleBar->task_handle = NULL;
-                }
+                anim->isPlaying = false;
+                anim_idleBar->isPlaying = false;
                 spi_oled_draw_square(&spi_ssd1327, 0, 16, 128, 112, SSD1327_GS_0);
                 break;
             }
         }
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
 }
 

@@ -56,6 +56,7 @@
 #include "include/images/home.h"
 
 #include "include/fonts/fusion_pixel.h"
+#include "include/fonts/fusion_pixel_30.h"
 
 #include "driver/adc.h"
 #include "soc/adc_channel.h"
@@ -111,6 +112,12 @@ const variable_font_t font_10 = {
     .widths = font_10_widths,
     .offsets = font_10_offsets,
     .data = font_10_data};
+
+const variable_font_t font_30 = {
+    .height = 30,
+    .widths = font_30_widths,
+    .offsets = font_30_offsets,
+    .data = font_30_data};
 
 static esp_afe_sr_iface_t *afe_handle = NULL;
 StreamBufferHandle_t play_stream_buf;
@@ -609,10 +616,15 @@ void init_audio_stream_buffer()
 static void animation_task(void *pvParameters)
 {
     spi_oled_animation_t *anim = (spi_oled_animation_t *)pvParameters;
-    uint8_t current_frame = 0;
+    int current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-    while (anim->is_playing == true || (anim->stop_frame != -1 && current_frame != anim->stop_frame))
+    while ((anim->stop_frame == -1 && anim->is_playing == true) || 
+        (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
     {
+        if(anim->stop_frame == -1 && anim->is_playing == false) {
+            break;
+        }
+        if(anim->stop_frame != -1 && anim->is_playing == false && current_frame == anim->stop_frame) break;
         // Calculate frame data offset
         const uint8_t *frame_data = anim->animation_data +
                                     (current_frame * anim->height * bytes_per_row);
@@ -630,21 +642,19 @@ static void animation_task(void *pvParameters)
         xSemaphoreGive(spi_mutex);
 
         // Move to next frame
-        if (anim->reverse == true)
-        {
+        if(anim->reverse == true){
             current_frame--;
         }
-        else
-            current_frame++;
+        else current_frame++;
         if (current_frame >= anim->frame_count)
         {
             current_frame = 0;
         }
-        else if (current_frame < 0)
+        else if( current_frame < 0)
         {
-            current_frame = anim->frame_count - 1; // Loop back to last frame
+            current_frame = anim->frame_count - 1;
         }
-
+ 
         vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
     }
     vTaskDelete(NULL);
@@ -652,11 +662,13 @@ static void animation_task(void *pvParameters)
 
 void draw_status()
 {
-    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_6, "bbTalkie");
+    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_5, "bbTalkie");
     spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie");
     spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high);
     spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on);
     spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4);
+    spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, "1");
+    spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, "1");
 }
 
 void oled_task(void *arg)
@@ -714,13 +726,14 @@ void oled_task(void *arg)
     // Initialize parameters
     anim->spi_ssd1327 = &spi_ssd1327;
     anim->x = 10;
-    anim->y = 30;
+    anim->y = 35;
     anim->width = 54;
     anim->height = 41;
     anim->frame_count = 14;
     anim->animation_data = (const uint8_t *)idle_single;
     anim->frame_delay_ms = 1000 / 5;
     anim->stop_frame = -1;
+    anim->reverse = false;
     anim->task_handle = NULL;
 
     spi_oled_animation_t *anim_idleBar = malloc(sizeof(spi_oled_animation_t));
@@ -734,19 +747,21 @@ void oled_task(void *arg)
     anim_idleBar->animation_data = (const uint8_t *)idle_bar;
     anim_idleBar->frame_delay_ms = 1000 / 15;
     anim_idleBar->stop_frame = -1;
+    anim_idleBar->reverse = false;
     anim_idleBar->task_handle = NULL;
 
     spi_oled_animation_t *anim_waveBar = malloc(sizeof(spi_oled_animation_t));
     // Initialize parameters
     anim_waveBar->spi_ssd1327 = &spi_ssd1327;
-    anim_waveBar->x = 10;
+    anim_waveBar->x = 1;
     anim_waveBar->y = 85;
-    anim_waveBar->width = 100;
-    anim_waveBar->height = 32;
-    anim_waveBar->frame_count = 30;
+    anim_waveBar->width = 126;
+    anim_waveBar->height = 40;
+    anim_waveBar->frame_count = 29;
     anim_waveBar->animation_data = (const uint8_t *)wave_bar;
     anim_waveBar->frame_delay_ms = 1000 / 30;
-    anim_waveBar->stop_frame = -1;
+    anim_waveBar->stop_frame = 3;
+    anim_waveBar->reverse = false;
     anim_waveBar->task_handle = NULL;
 
     draw_status();
@@ -778,12 +793,12 @@ void oled_task(void *arg)
             switch (state)
             {
             case 0: // Idle
-                anim_waveBar->is_playing = false;
                 anim->is_playing = true;
-                anim_idleBar->is_playing = true;
+                anim_waveBar->is_playing = false;
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim, 5, &anim->task_handle);
                 if (isFirstBoot)
                 {
+                    anim_idleBar->is_playing = true;
                     xTaskCreate(animation_task, "idleBarAnim", 2048, anim_idleBar, 5, &anim_idleBar->task_handle);
                     isFirstBoot = false;
                 }

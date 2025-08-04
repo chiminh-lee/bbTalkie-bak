@@ -100,7 +100,7 @@ typedef struct
     const uint8_t *animation_data;
     uint32_t frame_delay_ms;
     bool is_playing;
-    uint8_t stop_frame;
+    int stop_frame;
     bool reverse;
     TaskHandle_t task_handle;
 } spi_oled_animation_t;

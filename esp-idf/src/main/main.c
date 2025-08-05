@@ -667,8 +667,6 @@ void draw_status()
     spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high);
     spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on);
     spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4);
-    spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, "1");
-    spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, "1");
 }
 
 void oled_task(void *arg)
@@ -764,6 +762,35 @@ void oled_task(void *arg)
     anim_waveBar->reverse = false;
     anim_waveBar->task_handle = NULL;
 
+    spi_oled_animation_t *anim_podcast = malloc(sizeof(spi_oled_animation_t));
+    // Initialize parameters
+    anim_podcast->spi_ssd1327 = &spi_ssd1327;
+    anim_podcast->x = 74;
+    anim_podcast->y = 38;
+    anim_podcast->width = 36;
+    anim_podcast->height = 36;
+    anim_podcast->frame_count = 24;
+    anim_podcast->animation_data = (const uint8_t *)podcast;
+    anim_podcast->frame_delay_ms = 1000 / 30;
+    anim_podcast->stop_frame = -1;
+    anim_podcast->reverse = false;
+    anim_podcast->task_handle = NULL;
+
+    spi_oled_animation_t *anim_speaker = malloc(sizeof(spi_oled_animation_t));
+    // Initialize parameters
+    anim_speaker->spi_ssd1327 = &spi_ssd1327;
+    anim_speaker->x = 74;
+    anim_speaker->y = 38;
+    anim_speaker->width = 36;
+    anim_speaker->height = 36;
+    anim_speaker->frame_count = 46;
+    anim_speaker->animation_data = (const uint8_t *)speaker;
+    anim_speaker->frame_delay_ms = 1000 / 30;
+    anim_speaker->stop_frame = -1;
+    anim_speaker->reverse = false;
+    anim_speaker->task_handle = NULL;
+
+
     draw_status();
 
     bool isFirstBoot = true;
@@ -790,11 +817,18 @@ void oled_task(void *arg)
         if (state != lastState)
         {
             lastState = state;
+            anim_waveBar->is_playing = false;
+            anim->is_playing = false;
+            anim_idleBar->is_playing = false;
+            anim_podcast->is_playing = false;
+            anim_speaker->is_playing = false;
             switch (state)
             {
             case 0: // Idle
                 anim->is_playing = true;
-                anim_waveBar->is_playing = false;
+                spi_oled_draw_square(&spi_ssd1327, 74, 38, 36, 36, SSD1327_GS_0);
+                spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, "1");
+                spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, "1");
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim, 5, &anim->task_handle);
                 if (isFirstBoot)
                 {
@@ -805,13 +839,18 @@ void oled_task(void *arg)
                 printf("Idle job create\n");
                 break;
             case 1: // Speaking
-                // stop idleBarAnim
-                anim->is_playing = false;
-                anim_idleBar->is_playing = false;
+                anim_waveBar->reverse = false;
                 anim_waveBar->is_playing = true;
+                anim_podcast->is_playing = true;
+                xTaskCreate(animation_task, "podcastAnim", 2048, anim_podcast, 5, &anim_podcast->task_handle);
                 xTaskCreate(animation_task, "waveBarAnim", 2048, anim_waveBar, 5, &anim_waveBar->task_handle);
                 break;
             case 2: // Receiving
+                anim_waveBar->reverse = true;
+                anim_waveBar->is_playing = true;
+                anim_speaker->is_playing = true;
+                xTaskCreate(animation_task, "podcastAnim", 2048, anim_podcast, 5, &anim_podcast->task_handle);
+                xTaskCreate(animation_task, "waveBarAnim", 2048, anim_waveBar, 5, &anim_waveBar->task_handle);
                 break;
             case 3: // Command
                 // stop idleBarAnim

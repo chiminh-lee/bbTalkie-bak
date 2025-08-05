@@ -14,6 +14,7 @@ struct spi_ssd1327
     spi_device_handle_t *spi_handle;
     uint8_t *framebuffer; // Frame buffer for 4bpp grayscale (8192 bytes)
     bool auto_refresh;    // Auto refresh display after drawing operations
+    SemaphoreHandle_t display_mutex;
 };
 
 typedef enum

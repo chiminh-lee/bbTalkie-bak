@@ -69,6 +69,7 @@ void spi_oled_init(struct spi_ssd1327 *spi_ssd1327)
     // Initialize frame buffer
     spi_oled_framebuffer_init(spi_ssd1327);
     spi_ssd1327->auto_refresh = true;  // Default to auto refresh
+    spi_ssd1327->display_mutex = xSemaphoreCreateMutex();
 }
 
 void spi_oled_deinit(struct spi_ssd1327 *spi_ssd1327)
@@ -201,48 +202,62 @@ void spi_oled_framebuffer_clear(struct spi_ssd1327 *spi_ssd1327, ssd1327_gs_t co
 
 void spi_oled_framebuffer_refresh(struct spi_ssd1327 *spi_ssd1327)
 {
-    if (!spi_ssd1327->framebuffer) return;
+    if (!spi_ssd1327->framebuffer || !spi_ssd1327->display_mutex) return;
     
-    // Set full screen address window
-    spi_oled_send_cmd(spi_ssd1327, 0x15);  // Set Column Address
-    spi_oled_send_cmd(spi_ssd1327, 0x00);  // Column start
-    spi_oled_send_cmd(spi_ssd1327, 0x3F);  // Column end (128/2 - 1 = 63)
-    
-    spi_oled_send_cmd(spi_ssd1327, 0x75);  // Set Row Address
-    spi_oled_send_cmd(spi_ssd1327, 0x00);  // Row start
-    spi_oled_send_cmd(spi_ssd1327, 0x7F);  // Row end (128 - 1 = 127)
-    
-    // Send entire frame buffer
-    spi_oled_send_data(spi_ssd1327, spi_ssd1327->framebuffer, SSD1327_BUFFER_SIZE * 8);
+    // Take mutex with timeout to prevent deadlock
+    if (xSemaphoreTake(spi_ssd1327->display_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        
+        // Set full screen address window
+        spi_oled_send_cmd(spi_ssd1327, 0x15);  // Set Column Address
+        spi_oled_send_cmd(spi_ssd1327, 0x00);  // Column start
+        spi_oled_send_cmd(spi_ssd1327, 0x3F);  // Column end (128/2 - 1 = 63)
+        
+        spi_oled_send_cmd(spi_ssd1327, 0x75);  // Set Row Address
+        spi_oled_send_cmd(spi_ssd1327, 0x00);  // Row start
+        spi_oled_send_cmd(spi_ssd1327, 0x7F);  // Row end (128 - 1 = 127)
+        
+        // Send entire frame buffer
+        spi_oled_send_data(spi_ssd1327, spi_ssd1327->framebuffer, SSD1327_BUFFER_SIZE * 8);
+        
+        // Release mutex
+        xSemaphoreGive(spi_ssd1327->display_mutex);
+    }
 }
 
 void spi_oled_framebuffer_refresh_region(struct spi_ssd1327 *spi_ssd1327, 
                                        uint8_t x, uint8_t y, 
                                        uint8_t width, uint8_t height)
 {
-    if (!spi_ssd1327->framebuffer) return;
+    if (!spi_ssd1327->framebuffer || !spi_ssd1327->display_mutex) return;
     
     // Boundary checks
     if (x >= SSD1327_WIDTH || y >= SSD1327_HEIGHT) return;
     if (x + width > SSD1327_WIDTH) width = SSD1327_WIDTH - x;
     if (y + height > SSD1327_HEIGHT) height = SSD1327_HEIGHT - y;
     
-    uint8_t start_col = x / 2;
-    uint8_t end_col = (x + width - 1) / 2;
-    
-    spi_oled_send_cmd(spi_ssd1327, 0x15);
-    spi_oled_send_cmd(spi_ssd1327, start_col);
-    spi_oled_send_cmd(spi_ssd1327, end_col);
-    
-    spi_oled_send_cmd(spi_ssd1327, 0x75);
-    spi_oled_send_cmd(spi_ssd1327, y);
-    spi_oled_send_cmd(spi_ssd1327, y + height - 1);
-    
-    // Send region data row by row
-    uint16_t bytes_per_row = end_col - start_col + 1;
-    for (uint8_t row = 0; row < height; row++) {
-        uint16_t offset = ((y + row) * (SSD1327_WIDTH / 2)) + start_col;
-        spi_oled_send_data(spi_ssd1327, &spi_ssd1327->framebuffer[offset], bytes_per_row * 8);
+    // Take mutex with timeout
+    if (xSemaphoreTake(spi_ssd1327->display_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        
+        uint8_t start_col = x / 2;
+        uint8_t end_col = (x + width - 1) / 2;
+        
+        spi_oled_send_cmd(spi_ssd1327, 0x15);
+        spi_oled_send_cmd(spi_ssd1327, start_col);
+        spi_oled_send_cmd(spi_ssd1327, end_col);
+        
+        spi_oled_send_cmd(spi_ssd1327, 0x75);
+        spi_oled_send_cmd(spi_ssd1327, y);
+        spi_oled_send_cmd(spi_ssd1327, y + height - 1);
+        
+        // Send region data row by row
+        uint16_t bytes_per_row = end_col - start_col + 1;
+        for (uint8_t row = 0; row < height; row++) {
+            uint16_t offset = ((y + row) * (SSD1327_WIDTH / 2)) + start_col;
+            spi_oled_send_data(spi_ssd1327, &spi_ssd1327->framebuffer[offset], bytes_per_row * 8);
+        }
+        
+        // Release mutex
+        xSemaphoreGive(spi_ssd1327->display_mutex);
     }
 }
 

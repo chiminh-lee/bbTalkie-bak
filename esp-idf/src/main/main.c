@@ -37,6 +37,7 @@
 #include "esp_system.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "esp_timer.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -95,8 +96,9 @@ static led_strip_handle_t led_strip;
 
 #define PING_MAGIC "PING"
 #define PING_MAGIC_LEN 4
-#define MAX_MAC_TRACK 16
+#define MAX_MAC_TRACK 9
 #define MAC_TIMEOUT_MS 20000
+int macCount = 1;
 
 typedef struct
 {
@@ -172,9 +174,12 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
 
     if (data_len == PING_MAGIC_LEN && memcmp(data, PING_MAGIC, PING_MAGIC_LEN) == 0) // PING MSG
     {
-        /*         int64_t now = esp_timer_get_time() / 1000; // ms
+                int64_t now = esp_timer_get_time() / 1000; // ms
                 bool found = false;
-
+                ESP_LOGI(TAG, "Received PING from %02x:%02x:%02x:%02x:%02x:%02x",
+                         recv_info->src_addr[0], recv_info->src_addr[1],
+                         recv_info->src_addr[2], recv_info->src_addr[3],
+                         recv_info->src_addr[4], recv_info->src_addr[5]);
                 for (int i = 0; i < MAX_MAC_TRACK; ++i)
                 {
                     if (mac_track_list[i].valid &&
@@ -195,12 +200,12 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
                             memcpy(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN);
                             mac_track_list[i].last_seen_ms = now;
                             mac_track_list[i].valid = true;
-                            ESP_LOGI(TAG, "Added MAC from ping:");
-                            print_mac(recv_info->src_addr);
+                            ESP_LOGI(TAG, "Added MAC");
+                            macCount += 1;
                             break;
                         }
                     }
-                } */
+                } 
     }
     // CMD: prefix handling
     else if (data_len >= 4 && memcmp(data, "CMD:", 4) == 0)
@@ -484,6 +489,17 @@ void decode_Task(void *arg)
         }
 
         vTaskDelay(pdMS_TO_TICKS(16));
+    }
+}
+
+void ping_task(void *arg)
+{
+    send_data_esp_now((const uint8_t *)PING_MAGIC, PING_MAGIC_LEN);
+    //ping every 10 seconds
+    while (1)
+    {
+        vTaskDelay(pdMS_TO_TICKS(10000)); // 10 seconds
+        send_data_esp_now((const uint8_t *)PING_MAGIC, PING_MAGIC_LEN);
     }
 }
 
@@ -814,6 +830,14 @@ void oled_task(void *arg)
         {
             state = 0; // Idle
         }
+        if(state == 0){
+            //convert macCount from int to string
+            char macCountStr[2]; // Enough space for int range + null terminator
+            sprintf(macCountStr, "%d", macCount);
+
+            spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, macCountStr);
+            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, macCountStr);
+        }
         if (state != lastState)
         {
             lastState = state;
@@ -827,8 +851,7 @@ void oled_task(void *arg)
             case 0: // Idle
                 anim->is_playing = true;
                 spi_oled_draw_square(&spi_ssd1327, 74, 38, 36, 36, SSD1327_GS_0);
-                spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, "1");
-                spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, "1");
+                
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim, 5, &anim->task_handle);
                 if (isFirstBoot)
                 {
@@ -1049,4 +1072,5 @@ void app_main()
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(oled_task, "oled", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(ping_task, "ping", 4 * 1024, NULL, 5, NULL, 0);
 }

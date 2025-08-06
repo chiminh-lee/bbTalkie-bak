@@ -2,6 +2,7 @@ set(requires
     hardware_driver
     player
     esp_wifi
+    esp_timer
     nvs_flash
     )
 

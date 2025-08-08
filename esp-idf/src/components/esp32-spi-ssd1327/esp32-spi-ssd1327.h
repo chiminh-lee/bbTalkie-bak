@@ -91,17 +91,3 @@ void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
 // Utility functions
 void spi_oled_set_auto_refresh(struct spi_ssd1327 *spi_ssd1327, bool auto_refresh);
 uint16_t spi_oled_get_text_width(const variable_font_t *font, const char *text);
-
-// Animation structure (unchanged)
-typedef struct
-{
-    struct spi_ssd1327 *spi_ssd1327;
-    uint8_t x, y, width, height;
-    uint8_t frame_count;
-    const uint8_t *animation_data;
-    uint32_t frame_delay_ms;
-    bool is_playing;
-    int stop_frame;
-    bool reverse;
-    TaskHandle_t task_handle;
-} spi_oled_animation_t;

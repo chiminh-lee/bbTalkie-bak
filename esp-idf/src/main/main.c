@@ -380,15 +380,13 @@ static void animation_task(void *pvParameters)
     }
     int current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-    printf("anim info: x:%d, y:%d, width:%d, height:%d, frame_count:%d, stop_frame:%d, reverse:%d\n",
-           anim->x, anim->y, anim->width, anim->height, anim->frame_count, anim->stop_frame, anim->reverse);
     while ((anim->stop_frame == -1 && anim->is_playing == true) || 
         (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
     {
         if(anim->stop_frame == -1 && anim->is_playing == false) {
             break;
         }
-        if(anim->stop_frame != -1 && anim->is_playing == false && current_frame == anim->stop_frame) break;
+        if(anim->stop_frame != -1 && anim->is_playing == false && (state == 3 || current_frame == anim->stop_frame)) break;  //Force break when state is 3
         // Calculate frame data offset
         const uint8_t *frame_data = anim->animation_data +
                                     (current_frame * anim->height * bytes_per_row);
@@ -651,9 +649,7 @@ void detect_Task(void *arg)
                     i+1, mn_result->command_id[i], mn_result->phrase_id[i], mn_result->string, mn_result->prob[i]);
                 }
                 printf("Playing animation for command_id: %d\n", mn_result->command_id[0]);
-                if(anim_currentCommand != NULL) {
-                    anim_currentCommand->is_playing = false;
-                }
+                if(anim_currentCommand != NULL) anim_currentCommand->is_playing = false;
                 anim_currentCommand = get_animation_by_key(mn_result->command_id[0]);
                 lastState = -1;
                 is_command = true;
@@ -849,6 +845,7 @@ void oled_task(void *arg)
             case 3: // Command
                 // stop idleBarAnim
                 printf("Create command anim task\n");
+                spi_oled_draw_square(&spi_ssd1327, 0, 14, 128, 114, SSD1327_GS_0);
                 anim_currentCommand->is_playing = true;
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim_currentCommand, 5, &anim_currentCommand->task_handle);
                 break;

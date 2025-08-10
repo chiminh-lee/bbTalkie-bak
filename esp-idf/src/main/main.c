@@ -422,6 +422,31 @@ static void animation_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+void bubble_text_task(void *arg)
+{
+    const char *input_text = (const char *)arg;
+    if (input_text == NULL)
+    {
+        printf("Invalid text for bubble task\n");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Create a local copy to prevent corruption
+    char text[64]; // Adjust size as needed
+    strncpy(text, input_text, sizeof(text) - 1);
+    text[sizeof(text) - 1] = '\0';
+
+    for(int i = -6; i < 0; i++){
+        printf("bubble draw at y:%d\n", i);
+        printf("bubble text:%s\n", text);
+        spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble);
+        spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text);
+        vTaskDelay(pdMS_TO_TICKS(1000 / 15));
+    }
+    vTaskDelete(NULL);
+}
+
 void feed_Task(void *arg)
 {
     esp_afe_sr_data_t *afe_data = arg;
@@ -661,6 +686,7 @@ void detect_Task(void *arg)
             if (mn_state == ESP_MN_STATE_TIMEOUT) {
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
                 printf("timeout, string:%s\n", mn_result->string);
+                xTaskCreate(bubble_text_task, "bubbleText", 4096, mn_result->string, 5, NULL);
                 continue;
             } 
         }

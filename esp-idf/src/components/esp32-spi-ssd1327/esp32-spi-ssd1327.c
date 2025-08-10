@@ -408,12 +408,12 @@ uint16_t spi_oled_get_text_width(const variable_font_t *font, const char *text)
     return width;
 }
 
-void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
+void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
                       const variable_font_t *font, ssd1327_gs_t gs, const char *text)
 {
     if (!text || !font || !spi_ssd1327->framebuffer) return;
     
-    uint16_t char_x = x;
+    int16_t char_x = x;
     const char *str = text;
     
     while (*str) {
@@ -425,82 +425,101 @@ void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
         uint16_t data_offset = font->offsets[char_idx];
         uint8_t bytes_per_row = (char_width + 7) / 8;
         
-        // Render character
-        for (uint8_t row = 0; row < font->height; row++) {
-            for (uint8_t col = 0; col < char_width; col++) {
-                uint8_t byte_idx = col / 8;
-                uint8_t bit_idx = col % 8;
-                uint8_t font_byte = font->data[data_offset + row * bytes_per_row + byte_idx];
+        // Calculate clipping for this character
+        int16_t start_row = (y < 0) ? -y : 0;
+        int16_t start_col = (char_x < 0) ? -char_x : 0;
+        int16_t end_row = font->height;
+        int16_t end_col = char_width;
+        
+        // Clip to screen boundaries
+        if (y + font->height > SSD1327_HEIGHT) {
+            end_row = SSD1327_HEIGHT - y;
+        }
+        if (char_x + char_width > SSD1327_WIDTH) {
+            end_col = SSD1327_WIDTH - char_x;
+        }
+        
+        // Only draw if character is at least partially visible
+        if (start_row < end_row && start_col < end_col && 
+            char_x + char_width > 0 && char_x < SSD1327_WIDTH &&
+            y + font->height > 0 && y < SSD1327_HEIGHT) {
+            
+            // Render visible portion of character
+            for (int16_t row = start_row; row < end_row; row++) {
+                int16_t screen_y = y + row;
+                if (screen_y < 0 || screen_y >= SSD1327_HEIGHT) continue;
                 
-                if (font_byte & (1 << (7 - bit_idx))) {
-                    spi_oled_set_pixel(spi_ssd1327, char_x + col, y + row, gs);
+                for (int16_t col = start_col; col < end_col; col++) {
+                    int16_t screen_x = char_x + col;
+                    if (screen_x < 0 || screen_x >= SSD1327_WIDTH) continue;
+                    
+                    uint8_t byte_idx = col / 8;
+                    uint8_t bit_idx = col % 8;
+                    uint8_t font_byte = font->data[data_offset + row * bytes_per_row + byte_idx];
+                    
+                    if (font_byte & (1 << (7 - bit_idx))) {
+                        spi_oled_set_pixel(spi_ssd1327, screen_x, screen_y, gs);
+                    }
                 }
             }
         }
         
         char_x += char_width + 1;  // Character spacing
+        
+        // Stop if we've moved completely past the right edge
+        if (char_x >= SSD1327_WIDTH) break;
     }
     
     if (spi_ssd1327->auto_refresh) {
-        uint16_t text_width = spi_oled_get_text_width(font, text);
-        spi_oled_framebuffer_refresh_region(spi_ssd1327, x, y, text_width, font->height);
+        // Calculate visible refresh region
+        int16_t text_width = spi_oled_get_text_width(font, text);
+        int16_t refresh_x = (x < 0) ? 0 : x;
+        int16_t refresh_y = (y < 0) ? 0 : y;
+        int16_t refresh_width = (x + text_width > SSD1327_WIDTH) ? SSD1327_WIDTH - refresh_x : text_width;
+        int16_t refresh_height = (y + font->height > SSD1327_HEIGHT) ? SSD1327_HEIGHT - refresh_y : font->height;
+        
+        if (refresh_width > 0 && refresh_height > 0) {
+            spi_oled_framebuffer_refresh_region(spi_ssd1327, refresh_x, refresh_y, 
+                                              refresh_width, refresh_height);
+        }
     }
 }
 
-void spi_oled_drawTextWithShadow(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
-                                 const variable_font_t *font, ssd1327_gs_t gs, 
-                                 ssd1327_gs_t gs_shadow, int8_t offset_x, int8_t offset_y,
-                                 const char *text)
-{
-    if (!text || !font) return;
-    
-    bool original_auto_refresh = spi_ssd1327->auto_refresh;
-    spi_ssd1327->auto_refresh = false;  // Disable auto refresh during drawing
-    
-    // Draw shadow first (if shadow grayscale > 0)
-    if (gs_shadow > 0) {
-        spi_oled_drawText(spi_ssd1327, x + offset_x, y + offset_y, font, gs_shadow, text);
-    }
-    
-    // Draw main text
-    spi_oled_drawText(spi_ssd1327, x, y, font, gs, text);
-    
-    spi_ssd1327->auto_refresh = original_auto_refresh;
-    
-    if (spi_ssd1327->auto_refresh) {
-        // Calculate refresh region that encompasses both text and shadow
-        uint16_t text_width = spi_oled_get_text_width(font, text);
-        
-        int16_t min_x = (offset_x < 0) ? x + offset_x : x;
-        int16_t min_y = (offset_y < 0) ? y + offset_y : y;
-        int16_t max_x = (offset_x > 0) ? x + text_width + offset_x : x + text_width;
-        int16_t max_y = (offset_y > 0) ? y + font->height + offset_y : y + font->height;
-        
-        // Ensure bounds are within display
-        if (min_x < 0) min_x = 0;
-        if (min_y < 0) min_y = 0;
-        if (max_x > SSD1327_WIDTH) max_x = SSD1327_WIDTH;
-        if (max_y > SSD1327_HEIGHT) max_y = SSD1327_HEIGHT;
-        
-        uint8_t refresh_width = max_x - min_x;
-        uint8_t refresh_height = max_y - min_y;
-        
-        spi_oled_framebuffer_refresh_region(spi_ssd1327, min_x, min_y, refresh_width, refresh_height);
-    }
-}
-
-void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
+void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
                        uint8_t width, uint8_t height, const uint8_t *image)
 {
     if (!image || !spi_ssd1327->framebuffer) return;
     
     uint8_t image_bytes_per_row = (width + 1) / 2;
     
-    for (uint8_t row = 0; row < height; row++) {
-        if (y + row >= SSD1327_HEIGHT) break;
+    // Calculate clipping boundaries
+    int16_t start_row = (y < 0) ? -y : 0;  // Skip rows that are above screen
+    int16_t start_col = (x < 0) ? -x : 0;  // Skip columns that are left of screen
+    int16_t end_row = height;
+    int16_t end_col = width;
+    
+    // Clip to screen boundaries
+    if (y + height > SSD1327_HEIGHT) {
+        end_row = SSD1327_HEIGHT - y;
+    }
+    if (x + width > SSD1327_WIDTH) {
+        end_col = SSD1327_WIDTH - x;
+    }
+    
+    // If completely outside screen, don't draw
+    if (start_row >= end_row || start_col >= end_col || 
+        y >= SSD1327_HEIGHT || x >= SSD1327_WIDTH ||
+        y + height <= 0 || x + width <= 0) {
+        return;
+    }
+    
+    for (int16_t row = start_row; row < end_row; row++) {
+        int16_t screen_y = y + row;
+        if (screen_y < 0 || screen_y >= SSD1327_HEIGHT) continue;
         
-        for (uint8_t col = 0; col < width; col++) {
-            if (x + col >= SSD1327_WIDTH) break;
+        for (int16_t col = start_col; col < end_col; col++) {
+            int16_t screen_x = x + col;
+            if (screen_x < 0 || screen_x >= SSD1327_WIDTH) continue;
             
             uint8_t byte_idx = col / 2;
             uint8_t pixel_pos = col % 2;
@@ -513,12 +532,21 @@ void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
                 pixel_value = image_byte & 0x0F;         // Right pixel
             }
             
-            spi_oled_set_pixel(spi_ssd1327, x + col, y + row, pixel_value);
+            spi_oled_set_pixel(spi_ssd1327, screen_x, screen_y, pixel_value);
         }
     }
     
     if (spi_ssd1327->auto_refresh) {
-        spi_oled_framebuffer_refresh_region(spi_ssd1327, x, y, width, height);
+        // Only refresh the visible region
+        int16_t refresh_x = (x < 0) ? 0 : x;
+        int16_t refresh_y = (y < 0) ? 0 : y;
+        int16_t refresh_width = (x + width > SSD1327_WIDTH) ? SSD1327_WIDTH - refresh_x : width - start_col;
+        int16_t refresh_height = (y + height > SSD1327_HEIGHT) ? SSD1327_HEIGHT - refresh_y : height - start_row;
+        
+        if (refresh_width > 0 && refresh_height > 0) {
+            spi_oled_framebuffer_refresh_region(spi_ssd1327, refresh_x, refresh_y, 
+                                              refresh_width, refresh_height);
+        }
     }
 }
 

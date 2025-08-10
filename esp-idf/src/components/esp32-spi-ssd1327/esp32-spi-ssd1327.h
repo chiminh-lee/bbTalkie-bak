@@ -75,18 +75,12 @@ void spi_oled_draw_line(struct spi_ssd1327 *spi_ssd1327, uint8_t x0, uint8_t y0,
                         uint8_t x1, uint8_t y1, ssd1327_gs_t gs);
 
 // Text drawing functions
-void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
-                       const variable_font_t *font, ssd1327_gs_t gs, const char *text);
-
-// Simplified shadow text - now just draws text twice with offset
-void spi_oled_drawTextWithShadow(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
-                                 const variable_font_t *font, ssd1327_gs_t gs,
-                                 ssd1327_gs_t gs_shadow, int8_t offset_x, int8_t offset_y,
-                                 const char *text);
+void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
+                      const variable_font_t *font, ssd1327_gs_t gs, const char *text);
 
 // Image drawing function
-void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, uint8_t x, uint8_t y,
-                        uint8_t width, uint8_t height, const uint8_t *image);
+void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
+                       uint8_t width, uint8_t height, const uint8_t *image);
 
 // Utility functions
 void spi_oled_set_auto_refresh(struct spi_ssd1327 *spi_ssd1327, bool auto_refresh);

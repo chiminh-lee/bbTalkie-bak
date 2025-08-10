@@ -571,8 +571,9 @@ void detect_Task(void *arg)
     char *mn_name = esp_srmodel_filter(models, ESP_MN_PREFIX, ESP_MN_CHINESE);
     printf("multinet:%s\n", mn_name);
     esp_mn_iface_t *multinet = esp_mn_handle_from_name(mn_name);
-    model_iface_data_t *model_data = multinet->create(mn_name, 6000);
+    model_iface_data_t *model_data = multinet->create(mn_name, 1500);
     int mu_chunksize = multinet->get_samp_chunksize(model_data);
+    printf("mu chunksize:%d, afe chunksize:%d\n", mu_chunksize, afe_chunksize);
     assert(mu_chunksize == afe_chunksize);
     int16_t *buff = malloc(afe_chunksize * sizeof(int16_t));
     multinet->print_active_speech_commands(model_data);
@@ -596,6 +597,10 @@ void detect_Task(void *arg)
         // save speech data
         if (res->vad_state != VAD_SILENCE && !is_receiving)
         {
+            if(is_speaking == false){
+                printf("clean\n");
+                multinet->clean(model_data);
+            }
             is_speaking = true;
             // Define a buffer for g711 output
             size_t g711_len = 0;
@@ -608,31 +613,34 @@ void detect_Task(void *arg)
 
             if (res->vad_cache_size > 0)
             {
-                // send_data((const uint8_t *)res->vad_cache, res->vad_cache_size);
-                //  Make sure we have enough data for at least one frame
+                // Make sure we have enough data for at least one frame
                 encode_g711(res->vad_cache, res->vad_cache_size, g711_output, &g711_len);
-                multinet->clean(model_data);
+
                 if (g711_len > 0)
                 {
-                    //printf("Encoded VAD cache: %zu bytes       Raw: %zu bytes\n", g711_len, res->vad_cache_size);
+                    // printf("Encoded VAD cache: %zu bytes       Raw: %zu bytes\n", g711_len, res->vad_cache_size);
                     // send_data(g711_output, g711_len);
                     send_data_esp_now(g711_output, g711_len);
                 }
-                mn_state = multinet->detect(model_data, res->vad_cache);
+                size_t num_chunks = res->vad_cache_size / (mu_chunksize * sizeof(int16_t));
+                //printf("vad_cache_size: %zu , mu_chunksize: %d, num_chunks: %zu\n", res->vad_cache_size, mu_chunksize, num_chunks);
+                for (size_t i = 0; i < num_chunks; i++)
+                {
+                    int16_t *chunk = res->vad_cache + (i * mu_chunksize);
+                    mn_state = multinet->detect(model_data, chunk);
+                }
             }
 
             if (res->vad_state == VAD_SPEECH)
             {
-                // send_data((const uint8_t *)res->data, res->data_size);
+                //printf("vad_data_size: %zu\n", res->data_size);
                 //  Make sure we have enough data for at least one frame
-
                 g711_len = 0; // Reset for new encoding
                 encode_g711(res->data, res->data_size, g711_output, &g711_len);
                 
                 if (g711_len > 0)
                 {
                     //printf("Encoded speech data: %zu bytes      Raw: %zu bytes\n", g711_len, res->data_size);
-                    // send_data(g711_output, g711_len);
                     send_data_esp_now(g711_output, g711_len);
                 }
                 mn_state = multinet->detect(model_data, res->data);
@@ -658,7 +666,7 @@ void detect_Task(void *arg)
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
                 printf("timeout, string:%s\n", mn_result->string);
                 continue;
-            }
+            } 
         }
         else
         {
@@ -960,7 +968,7 @@ void app_main()
         afe_config->agc_mode = AFE_AGC_MODE_WAKENET; // Use WEBRTC AGC
         afe_config->agc_compression_gain_db = 32; // The maximum gain of AGC
         afe_config->agc_target_level_dbfs = 1; // The target level of AGC */
-    afe_config->vad_min_noise_ms = 1000; // The minimum duration of noise or silence in ms.
+    afe_config->vad_min_noise_ms = 800; // The minimum duration of noise or silence in ms.
     afe_config->vad_min_speech_ms = 128; // The minimum duration of speech in ms.
     afe_config->vad_mode = VAD_MODE_1;   // The larger the mode, the higher the speech trigger probability.
     afe_config->afe_linear_gain = 3.0;

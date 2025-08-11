@@ -76,7 +76,7 @@ void spi_oled_draw_line(struct spi_ssd1327 *spi_ssd1327, uint8_t x0, uint8_t y0,
 
 // Text drawing functions
 void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
-                      const variable_font_t *font, ssd1327_gs_t gs, const char *text);
+                      const variable_font_t *font, ssd1327_gs_t gs, const char *text, uint8_t max_width);
 
 // Image drawing function
 void spi_oled_drawImage(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,

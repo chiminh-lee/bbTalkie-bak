@@ -425,7 +425,7 @@ static void animation_task(void *pvParameters)
 void bubble_text_task(void *arg)
 {
     const char *input_text = (const char *)arg;
-    if (input_text == NULL)
+    if (input_text == NULL || strlen(input_text) == 0)
     {
         printf("Invalid text for bubble task\n");
         vTaskDelete(NULL);
@@ -438,10 +438,8 @@ void bubble_text_task(void *arg)
     text[sizeof(text) - 1] = '\0';
 
     for(int i = -6; i < 0; i++){
-        printf("bubble draw at y:%d\n", i);
-        printf("bubble text:%s\n", text);
         spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble);
-        spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text);
+        spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text, 91);
         vTaskDelay(pdMS_TO_TICKS(1000 / 15));
     }
     vTaskDelete(NULL);
@@ -752,8 +750,8 @@ void init_audio_stream_buffer()
 
 void draw_status()
 {
-    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_5, "bbTalkie");
-    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie");
+    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_5, "bbTalkie",0);
+    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie",0);
     spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high);
     spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on);
     spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4);
@@ -836,8 +834,8 @@ void oled_task(void *arg)
             char macCountStr[2]; // Enough space for int range + null terminator
             sprintf(macCountStr, "%d", macCount);
             spi_oled_draw_square(&spi_ssd1327, 74, 38, 36, 36, SSD1327_GS_0);
-            spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, macCountStr);
-            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, macCountStr);
+            spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, SSD1327_GS_5, macCountStr,0);
+            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, SSD1327_GS_15, macCountStr,0);
         }
         if (state != lastState)
         {

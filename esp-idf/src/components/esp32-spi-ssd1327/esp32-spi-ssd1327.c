@@ -409,7 +409,7 @@ uint16_t spi_oled_get_text_width(const variable_font_t *font, const char *text)
 }
 
 void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
-                      const variable_font_t *font, ssd1327_gs_t gs, const char *text)
+                      const variable_font_t *font, ssd1327_gs_t gs, const char *text , uint8_t max_width)
 {
     if (!text || !font || !spi_ssd1327->framebuffer) return;
     
@@ -430,6 +430,16 @@ void spi_oled_drawText(struct spi_ssd1327 *spi_ssd1327, int16_t x, int16_t y,
         int16_t start_col = (char_x < 0) ? -char_x : 0;
         int16_t end_row = font->height;
         int16_t end_col = char_width;
+        if (max_width == 0) {
+            max_width = SSD1327_WIDTH - x;
+        }
+        int16_t right_limit = x + max_width;
+
+        // Clip per-character to the allowed width
+        if (char_x + end_col > right_limit) {
+            end_col = right_limit - char_x;
+            if (end_col < 0) end_col = 0;
+        }
         
         // Clip to screen boundaries
         if (y + font->height > SSD1327_HEIGHT) {

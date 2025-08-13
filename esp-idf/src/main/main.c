@@ -22,7 +22,7 @@
 #include <math.h> // Add this for sin() function
 #include <string.h>
 #include "driver/gpio.h"
-#include "m_1.h"
+#include "include/byebye.h"
 #include "esp_audio_enc.h"
 #include "esp_audio_enc_reg.h"
 #include "esp_audio_enc_default.h"
@@ -731,18 +731,19 @@ void detect_Task(void *arg)
     vTaskDelete(NULL);
 }
 
-void play_audio_task(void *pvParameters)
+
+void byebye_sound(void *pvParameters)
 {
-    // This task is responsible for playing the audio
-    while (1)
+    esp_err_t ret = esp_audio_play((const int16_t *)byebye, sizeof(byebye) / 2, portMAX_DELAY);
+    if (ret != ESP_OK)
     {
-        esp_err_t ret = esp_audio_play((const int16_t *)m_1, sizeof(m_1) / 2, portMAX_DELAY);
-        if (ret != ESP_OK)
-        {
-            printf("Failed to play audio: %s", esp_err_to_name(ret));
-        }
-        vTaskDelay(pdMS_TO_TICKS(5000)); // Delay to avoid busy-waiting
+        printf("Failed to play byebye sound: %s", esp_err_to_name(ret));
     }
+    gpio_set_level(GPIO_NUM_3, 0);
+    gpio_set_level(GPIO_NUM_9, 0);
+    spi_oled_deinit(&spi_ssd1327);
+    esp_deep_sleep_start();
+    vTaskDelete(NULL);
 }
 
 void i2s_writer_task(void *arg)
@@ -991,16 +992,13 @@ void ws2812_init(void)
 static void button_long_press_cb(void *arg, void *usr_data)
 {
     printf("Long press detected! Entering deep sleep mode...");
-    vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
+    //vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
 
-    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0)); // Set LED to green
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
     ESP_ERROR_CHECK(led_strip_refresh(led_strip));
 
     // Enter deep sleep
-    gpio_set_level(GPIO_NUM_3, 0);
-    gpio_set_level(GPIO_NUM_9, 0);
-    spi_oled_deinit(&spi_ssd1327);
-    esp_deep_sleep_start();
+    xTaskCreatePinnedToCore(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL, 0);
 }
 
 static void button_single_click_cb(void *arg, void *usr_data)

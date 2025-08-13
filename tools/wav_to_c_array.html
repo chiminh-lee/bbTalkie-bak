@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WAV to C Array Converter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4a5568;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        }
+        
+        .upload-area:hover {
+            border-color: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: linear-gradient(45deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .upload-btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+        
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .info {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .copy-btn:hover {
+            background: #764ba2;
+            transform: scale(1.05);
+        }
+        
+        .progress {
+            width: 100%;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .file-info {
+            background: rgba(118, 75, 162, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #764ba2;
+        }
+        
+        .settings {
+            background: rgba(255, 255, 255, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+        
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+        }
+        
+        input[type="text"], input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 5px;
+            transition: border-color 0.3s ease;
+        }
+        
+        input[type="text"]:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 WAV to C Array Converter</h1>
+        
+        <div class="info">
+            <strong>Instructions:</strong> Upload a 16kHz, 16-bit, mono WAV file to convert it into a C-style byte array for embedded applications.
+        </div>
+        
+        <div class="settings">
+            <h3>Settings</h3>
+            <div class="setting-row">
+                <label>Array Name:</label>
+                <input type="text" id="arrayName" value="audio_data" placeholder="audio_data">
+            </div>
+            <div class="setting-row">
+                <label>Bytes per Line:</label>
+                <input type="number" id="bytesPerLine" value="12" min="1" max="32">
+            </div>
+        </div>
+        
+        <div class="upload-area" id="uploadArea">
+            <div>
+                <p style="font-size: 24px; margin: 0;">📁</p>
+                <p>Drag and drop your WAV file here</p>
+                <p>or</p>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    Choose File
+                </button>
+            </div>
+            <input type="file" id="fileInput" accept=".wav" />
+        </div>
+        
+        <div class="progress" id="progress">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        
+        <div id="fileInfo" style="display: none;"></div>
+        
+        <div id="output" class="output" style="display: none;">
+            <button class="copy-btn" onclick="copyToClipboard()">Copy</button>
+            <div id="outputContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const output = document.getElementById('output');
+        const outputContent = document.getElementById('outputContent');
+        const fileInfo = document.getElementById('fileInfo');
+        const progress = document.getElementById('progress');
+        const progressBar = document.getElementById('progressBar');
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        function processFile(file) {
+            if (!file.name.toLowerCase().endsWith('.wav')) {
+                alert('Please select a WAV file.');
+                return;
+            }
+
+            progress.style.display = 'block';
+            progressBar.style.width = '20%';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                progressBar.style.width = '60%';
+                parseWAV(e.target.result, file.name);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function parseWAV(arrayBuffer, filename) {
+            const view = new DataView(arrayBuffer);
+            
+            // Check WAV header
+            const riffHeader = String.fromCharCode(...new Uint8Array(arrayBuffer, 0, 4));
+            if (riffHeader !== 'RIFF') {
+                alert('Invalid WAV file: Missing RIFF header');
+                return;
+            }
+
+            const waveHeader = String.fromCharCode(...new Uint8Array(arrayBuffer, 8, 4));
+            if (waveHeader !== 'WAVE') {
+                alert('Invalid WAV file: Missing WAVE header');
+                return;
+            }
+
+            // Find fmt chunk
+            let offset = 12;
+            let fmtChunkFound = false;
+            let audioFormat, numChannels, sampleRate, bitsPerSample, dataOffset, dataSize;
+
+            while (offset < arrayBuffer.byteLength) {
+                const chunkId = String.fromCharCode(...new Uint8Array(arrayBuffer, offset, 4));
+                const chunkSize = view.getUint32(offset + 4, true);
+
+                if (chunkId === 'fmt ') {
+                    fmtChunkFound = true;
+                    audioFormat = view.getUint16(offset + 8, true);
+                    numChannels = view.getUint16(offset + 10, true);
+                    sampleRate = view.getUint32(offset + 12, true);
+                    bitsPerSample = view.getUint16(offset + 22, true);
+                    break;
+                }
+                offset += 8 + chunkSize;
+            }
+
+            if (!fmtChunkFound) {
+                alert('Invalid WAV file: fmt chunk not found');
+                return;
+            }
+
+            // Find data chunk
+            offset = 12;
+            while (offset < arrayBuffer.byteLength) {
+                const chunkId = String.fromCharCode(...new Uint8Array(arrayBuffer, offset, 4));
+                const chunkSize = view.getUint32(offset + 4, true);
+
+                if (chunkId === 'data') {
+                    dataOffset = offset + 8;
+                    dataSize = chunkSize;
+                    break;
+                }
+                offset += 8 + chunkSize;
+            }
+
+            if (!dataOffset) {
+                alert('Invalid WAV file: data chunk not found');
+                return;
+            }
+
+            progressBar.style.width = '80%';
+
+            // Display file information
+            fileInfo.innerHTML = `
+                <div class="file-info">
+                    <h3>File Information</h3>
+                    <p><strong>Filename:</strong> ${filename}</p>
+                    <p><strong>Sample Rate:</strong> ${sampleRate} Hz</p>
+                    <p><strong>Channels:</strong> ${numChannels}</p>
+                    <p><strong>Bits per Sample:</strong> ${bitsPerSample}</p>
+                    <p><strong>Audio Format:</strong> ${audioFormat === 1 ? 'PCM' : 'Other'}</p>
+                    <p><strong>Data Size:</strong> ${dataSize} bytes</p>
+                    ${sampleRate !== 16000 ? '<p style="color: #e53e3e;"><strong>Warning:</strong> Sample rate is not 16kHz</p>' : ''}
+                    ${numChannels !== 1 ? '<p style="color: #e53e3e;"><strong>Warning:</strong> Audio is not mono</p>' : ''}
+                    ${bitsPerSample !== 16 ? '<p style="color: #e53e3e;"><strong>Warning:</strong> Not 16-bit audio</p>' : ''}
+                </div>
+            `;
+            fileInfo.style.display = 'block';
+
+            // Extract audio data
+            const audioData = new Uint8Array(arrayBuffer, dataOffset, dataSize);
+            const arrayName = document.getElementById('arrayName').value || 'audio_data';
+            const bytesPerLine = parseInt(document.getElementById('bytesPerLine').value) || 12;
+            
+            generateCArray(audioData, arrayName, bytesPerLine);
+            
+            progressBar.style.width = '100%';
+            setTimeout(() => {
+                progress.style.display = 'none';
+                progressBar.style.width = '0%';
+            }, 500);
+        }
+
+        function generateCArray(data, arrayName, bytesPerLine) {
+            let result = `const unsigned char ${arrayName}[] = {\n`;
+            
+            for (let i = 0; i < data.length; i++) {
+                if (i % bytesPerLine === 0 && i > 0) {
+                    result += '\n';
+                }
+                result += `0x${data[i].toString(16).padStart(2, '0').toUpperCase()}`;
+                if (i < data.length - 1) {
+                    result += ', ';
+                }
+            }
+            
+            result += `\n};\n\n`;
+            result += `// Array size: ${data.length} bytes\n`;
+            result += `// Usage: const unsigned char* audio = ${arrayName};\n`;
+            result += `//        size_t audio_size = sizeof(${arrayName});`;
+
+            outputContent.textContent = result;
+            output.style.display = 'block';
+        }
+
+        function copyToClipboard() {
+            const text = outputContent.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#48bb78';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '#667eea';
+                }, 2000);
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

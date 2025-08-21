@@ -232,10 +232,17 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
             memcpy(cmd_param, data + 4, param_len);
             cmd_param[param_len] = '\0';
 
-            // Convert to integer and call function
+            // Convert to integer and handle animation
             int cmd_value = atoi(cmd_param);
-            // doFunction(cmd_value);
             ESP_LOGI(TAG, "Processed CMD: %d", cmd_value);
+
+            // Handle animation for received command
+            printf("Playing animation for received command_id: %d\n", cmd_value);
+            if (anim_currentCommand != NULL)
+                anim_currentCommand->is_playing = false;
+            anim_currentCommand = get_animation_by_key(cmd_value);
+            lastState = -1;
+            is_command = true;
         }
     }
     // MSG: prefix handling
@@ -252,9 +259,20 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
             }
             memcpy(msg_content, data + 4, content_len);
             msg_content[content_len] = '\0';
-
-            // doFunction2(msg_content);
             ESP_LOGI(TAG, "Processed MSG: %s", msg_content);
+
+            // Create bubble text task for received message
+            char *msg_copy = malloc(strlen(msg_content) + 1);
+            if (msg_copy != NULL)
+            {
+                strcpy(msg_copy, msg_content);
+                xTaskCreate(bubble_text_task, "bubbleText", 4096, msg_copy, 5, NULL);
+                ESP_LOGI(TAG, "Created bubble_text_task for received message: %s", msg_content);
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Failed to allocate memory for bubble text message");
+            }
         }
     }
     // Others MSG, Store in queue if available
@@ -731,12 +749,30 @@ void detect_Task(void *arg)
                 anim_currentCommand = get_animation_by_key(mn_result->command_id[0]);
                 lastState = -1;
                 is_command = true;
+
+                // Send CMD via ESP-NOW
+                char cmd_buffer[32];
+                int cmd_len = snprintf(cmd_buffer, sizeof(cmd_buffer), "CMD:%d", mn_result->command_id[0]);
+                if (cmd_len > 0 && cmd_len < sizeof(cmd_buffer))
+                {
+                    send_data_esp_now((const uint8_t *)cmd_buffer, cmd_len);
+                    ESP_LOGI(TAG, "Sent CMD via ESP-NOW: %d", mn_result->command_id[0]);
+                }
             }
             if (mn_state == ESP_MN_STATE_TIMEOUT)
             {
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
                 printf("timeout, string:%s\n", mn_result->string);
                 xTaskCreate(bubble_text_task, "bubbleText", 4096, mn_result->string, 5, NULL);
+
+                // Send MSG via ESP-NOW
+                char msg_buffer[ESP_NOW_MAX_DATA_LEN_V2];
+                int msg_len = snprintf(msg_buffer, sizeof(msg_buffer), "MSG:%s", mn_result->string);
+                if (msg_len > 0 && msg_len < sizeof(msg_buffer))
+                {
+                    send_data_esp_now((const uint8_t *)msg_buffer, msg_len);
+                    ESP_LOGI(TAG, "Sent timeout MSG via ESP-NOW: %s", mn_result->string);
+                }
                 continue;
             }
         }

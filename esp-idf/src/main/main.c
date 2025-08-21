@@ -665,7 +665,7 @@ void detect_Task(void *arg)
         // printf("vad state: %s\n",res->vad_state == VAD_SILENCE ? "noise" : "speech");
 
         // save speech data
-        if (res->vad_state != VAD_SILENCE && !is_receiving)
+        if (res->vad_state != VAD_SILENCE && !is_receiving && !isMicOff)
         {
             is_speaking = true;
             // Define a buffer for g711 output
@@ -840,7 +840,7 @@ void i2s_writer_task(void *arg)
         // Block until enough PCM bytes are available
         size_t received = xStreamBufferReceive(play_stream_buf, i2s_buf, PLAY_CHUNK_SIZE, portMAX_DELAY);
 
-        if (received > 0)
+        if (received > 0 && !isMute)
         {
             printf("Write %zu bytes to I2S\n", received);
             esp_err_t ret = esp_audio_play((const int16_t *)i2s_buf, received / 2, portMAX_DELAY);

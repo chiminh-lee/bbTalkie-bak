@@ -169,6 +169,161 @@ static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t statu
     }
 }
 
+void send_data_esp_now(const uint8_t *data, size_t len)
+{
+    size_t offset = 0;
+
+    while (offset < len)
+    {
+        size_t chunk_size = len - offset > ESP_NOW_PACKET_SIZE ? ESP_NOW_PACKET_SIZE : len - offset;
+
+        esp_err_t ret = esp_now_send(broadcast_mac, data + offset, chunk_size);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "ESP-NOW send failed at offset %zu: %s", offset, esp_err_to_name(ret));
+        }
+        else
+        {
+            // ESP_LOGI(TAG, "Sent %zu bytes of data via ESP-NOW (offset %zu)", chunk_size, offset);
+        }
+
+        offset += chunk_size;
+        vTaskDelay(pdMS_TO_TICKS(16));
+    }
+}
+
+// Get received data (non-blocking)
+bool get_esp_now_data(esp_now_recv_data_t *recv_data)
+{
+    if (s_recv_queue == NULL || recv_data == NULL)
+    {
+        return false;
+    }
+
+    return (xQueueReceive(s_recv_queue, recv_data, 0) == pdTRUE);
+}
+
+// Fade in drawText
+void fade_in_drawCount(void *arg)
+{
+    const char *input_text = (const char *)arg;
+    if (input_text == NULL || strlen(input_text) == 0)
+    {
+        printf("Invalid text\n");
+        vTaskDelete(NULL);
+        return;
+    }
+    for (int i = 0; i < 15; i++)
+    {
+        if (state == 0)
+        {
+            spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, i / 2, input_text, 0);
+            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, i, input_text, 0);
+        }
+        else
+        {
+            vTaskDelete(NULL);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000 / 15));
+    }
+    vTaskDelete(NULL);
+}
+
+// Animation task function
+static void animation_task(void *pvParameters)
+{
+    spi_oled_animation_t *anim = (spi_oled_animation_t *)pvParameters;
+    if (anim == NULL)
+    {
+        // Handle error - invalid key
+        printf("Invalid animation parameters\n");
+        vTaskDelete(NULL);
+        return;
+    }
+    int current_frame = 0;
+    uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
+    while ((anim->stop_frame == -1 && anim->is_playing == true) ||
+           (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
+    {
+        if (anim->stop_frame == -1 && anim->is_playing == false)
+        {
+            break;
+        }
+        if (anim->stop_frame != -1 && anim->is_playing == false && (state == 3 || current_frame == anim->stop_frame))
+            break; // Force break when state is 3
+        // Calculate frame data offset
+        const uint8_t *frame_data = anim->animation_data +
+                                    (current_frame * anim->height * bytes_per_row);
+
+        // Lock SPI access
+        xSemaphoreTake(spi_mutex, portMAX_DELAY);
+
+        // Draw current frame
+        spi_oled_drawImage(&spi_ssd1327,
+                           anim->x, anim->y,
+                           anim->width, anim->height,
+                           frame_data, SSD1327_GS_15);
+
+        // Release SPI access
+        xSemaphoreGive(spi_mutex);
+
+        // Move to next frame
+        if (anim->reverse == true)
+        {
+            current_frame--;
+        }
+        else
+            current_frame++;
+        if (current_frame >= anim->frame_count)
+        {
+            current_frame = 0;
+        }
+        else if (current_frame < 0)
+        {
+            current_frame = anim->frame_count - 1;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
+    }
+    vTaskDelete(NULL);
+}
+
+void stopAllAnimation()
+{
+    anim_waveBar.is_playing = false;
+    anim.is_playing = false;
+    anim_speaking.is_playing = false;
+    anim_receiving.is_playing = false;
+    anim_idleWaveBar.is_playing = false;
+    anim_idleBar.is_playing = false;
+    anim_podcast.is_playing = false;
+    anim_speaker.is_playing = false;
+}
+
+void bubble_text_task(void *arg)
+{
+    const char *input_text = (const char *)arg;
+    if (input_text == NULL || strlen(input_text) == 0)
+    {
+        printf("Invalid text for bubble task\n");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Create a local copy to prevent corruption
+    char text[64]; // Adjust size as needed
+    strncpy(text, input_text, sizeof(text) - 1);
+    text[sizeof(text) - 1] = '\0';
+
+    for (int i = -6; i < 0; i++)
+    {
+        spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble, SSD1327_GS_15);
+        spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text, 91);
+        vTaskDelay(pdMS_TO_TICKS(1000 / 15));
+    }
+    vTaskDelete(NULL);
+}
+
 // ESP-NOW receive callback
 static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int data_len)
 {
@@ -353,161 +508,6 @@ bool init_esp_now()
 
     ESP_LOGI(TAG, "ESP-NOW initialized successfully");
     return true;
-}
-
-void send_data_esp_now(const uint8_t *data, size_t len)
-{
-    size_t offset = 0;
-
-    while (offset < len)
-    {
-        size_t chunk_size = len - offset > ESP_NOW_PACKET_SIZE ? ESP_NOW_PACKET_SIZE : len - offset;
-
-        esp_err_t ret = esp_now_send(broadcast_mac, data + offset, chunk_size);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "ESP-NOW send failed at offset %zu: %s", offset, esp_err_to_name(ret));
-        }
-        else
-        {
-            // ESP_LOGI(TAG, "Sent %zu bytes of data via ESP-NOW (offset %zu)", chunk_size, offset);
-        }
-
-        offset += chunk_size;
-        vTaskDelay(pdMS_TO_TICKS(16));
-    }
-}
-
-// Get received data (non-blocking)
-bool get_esp_now_data(esp_now_recv_data_t *recv_data)
-{
-    if (s_recv_queue == NULL || recv_data == NULL)
-    {
-        return false;
-    }
-
-    return (xQueueReceive(s_recv_queue, recv_data, 0) == pdTRUE);
-}
-
-// Fade in drawText
-void fade_in_drawCount(void *arg)
-{
-    const char *input_text = (const char *)arg;
-    if (input_text == NULL || strlen(input_text) == 0)
-    {
-        printf("Invalid text\n");
-        vTaskDelete(NULL);
-        return;
-    }
-    for (int i = 0; i < 15; i++)
-    {
-        if (state == 0)
-        {
-            spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, i / 2, input_text, 0);
-            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, i, input_text, 0);
-        }
-        else
-        {
-            vTaskDelete(NULL);
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000 / 15));
-    }
-    vTaskDelete(NULL);
-}
-
-// Animation task function
-static void animation_task(void *pvParameters)
-{
-    spi_oled_animation_t *anim = (spi_oled_animation_t *)pvParameters;
-    if (anim == NULL)
-    {
-        // Handle error - invalid key
-        printf("Invalid animation parameters\n");
-        vTaskDelete(NULL);
-        return;
-    }
-    int current_frame = 0;
-    uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-    while ((anim->stop_frame == -1 && anim->is_playing == true) ||
-           (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
-    {
-        if (anim->stop_frame == -1 && anim->is_playing == false)
-        {
-            break;
-        }
-        if (anim->stop_frame != -1 && anim->is_playing == false && (state == 3 || current_frame == anim->stop_frame))
-            break; // Force break when state is 3
-        // Calculate frame data offset
-        const uint8_t *frame_data = anim->animation_data +
-                                    (current_frame * anim->height * bytes_per_row);
-
-        // Lock SPI access
-        xSemaphoreTake(spi_mutex, portMAX_DELAY);
-
-        // Draw current frame
-        spi_oled_drawImage(&spi_ssd1327,
-                           anim->x, anim->y,
-                           anim->width, anim->height,
-                           frame_data, SSD1327_GS_15);
-
-        // Release SPI access
-        xSemaphoreGive(spi_mutex);
-
-        // Move to next frame
-        if (anim->reverse == true)
-        {
-            current_frame--;
-        }
-        else
-            current_frame++;
-        if (current_frame >= anim->frame_count)
-        {
-            current_frame = 0;
-        }
-        else if (current_frame < 0)
-        {
-            current_frame = anim->frame_count - 1;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
-    }
-    vTaskDelete(NULL);
-}
-
-void stopAllAnimation()
-{
-    anim_waveBar.is_playing = false;
-    anim.is_playing = false;
-    anim_speaking.is_playing = false;
-    anim_receiving.is_playing = false;
-    anim_idleWaveBar.is_playing = false;
-    anim_idleBar.is_playing = false;
-    anim_podcast.is_playing = false;
-    anim_speaker.is_playing = false;
-}
-
-void bubble_text_task(void *arg)
-{
-    const char *input_text = (const char *)arg;
-    if (input_text == NULL || strlen(input_text) == 0)
-    {
-        printf("Invalid text for bubble task\n");
-        vTaskDelete(NULL);
-        return;
-    }
-
-    // Create a local copy to prevent corruption
-    char text[64]; // Adjust size as needed
-    strncpy(text, input_text, sizeof(text) - 1);
-    text[sizeof(text) - 1] = '\0';
-
-    for (int i = -6; i < 0; i++)
-    {
-        spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble, SSD1327_GS_15);
-        spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text, 91);
-        vTaskDelay(pdMS_TO_TICKS(1000 / 15));
-    }
-    vTaskDelete(NULL);
 }
 
 void feed_Task(void *arg)

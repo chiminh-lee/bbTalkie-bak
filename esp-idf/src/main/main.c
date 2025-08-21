@@ -456,6 +456,18 @@ static void animation_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+void stopAllAnimation()
+{
+    anim_waveBar.is_playing = false;
+    anim.is_playing = false;
+    anim_speaking.is_playing = false;
+    anim_receiving.is_playing = false;
+    anim_idleWaveBar.is_playing = false;
+    anim_idleBar.is_playing = false;
+    anim_podcast.is_playing = false;
+    anim_speaker.is_playing = false;
+}
+
 void bubble_text_task(void *arg)
 {
     const char *input_text = (const char *)arg;
@@ -958,14 +970,7 @@ void oled_task(void *arg)
         if (state != lastState)
         {
             lastState = state;
-            anim_waveBar.is_playing = false;
-            anim.is_playing = false;
-            anim_speaking.is_playing = false;
-            anim_receiving.is_playing = false;
-            anim_idleWaveBar.is_playing = false;
-            anim_idleBar.is_playing = false;
-            anim_podcast.is_playing = false;
-            anim_speaker.is_playing = false;
+            stopAllAnimation();
             switch (state)
             {
             case 0: // Idle
@@ -1092,11 +1097,7 @@ static void button_long_press_cb(void *arg, void *usr_data)
     ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
     ESP_ERROR_CHECK(led_strip_refresh(led_strip));
 
-    anim_waveBar.is_playing = false;
-    anim.is_playing = false;
-    anim_idleBar.is_playing = false;
-    anim_podcast.is_playing = false;
-    anim_speaker.is_playing = false;
+    stopAllAnimation();
     isShoutdown = true;
     xTaskCreatePinnedToCore(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL, 0);

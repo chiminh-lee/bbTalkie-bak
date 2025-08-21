@@ -161,7 +161,7 @@ static void esp_now_send_cb(const uint8_t *mac_addr, esp_now_send_status_t statu
 {
     if (status == ESP_NOW_SEND_SUCCESS)
     {
-        //ESP_LOGI(TAG, "ESP-NOW data sent successfully");
+        // ESP_LOGI(TAG, "ESP-NOW data sent successfully");
     }
     else
     {
@@ -184,38 +184,38 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
 
     if (data_len == PING_MAGIC_LEN && memcmp(data, PING_MAGIC, PING_MAGIC_LEN) == 0) // PING MSG
     {
-                int64_t now = esp_timer_get_time() / 1000; // ms
-                bool found = false;
-                ESP_LOGI(TAG, "Received PING from %02x:%02x:%02x:%02x:%02x:%02x",
-                         recv_info->src_addr[0], recv_info->src_addr[1],
-                         recv_info->src_addr[2], recv_info->src_addr[3],
-                         recv_info->src_addr[4], recv_info->src_addr[5]);
-                for (int i = 0; i < MAX_MAC_TRACK; ++i)
-                {
-                    if (mac_track_list[i].valid &&
-                        memcmp(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN) == 0)
-                    {
-                        mac_track_list[i].last_seen_ms = now;
-                        found = true;
-                        break;
-                    }
-                }
+        int64_t now = esp_timer_get_time() / 1000; // ms
+        bool found = false;
+        ESP_LOGI(TAG, "Received PING from %02x:%02x:%02x:%02x:%02x:%02x",
+                 recv_info->src_addr[0], recv_info->src_addr[1],
+                 recv_info->src_addr[2], recv_info->src_addr[3],
+                 recv_info->src_addr[4], recv_info->src_addr[5]);
+        for (int i = 0; i < MAX_MAC_TRACK; ++i)
+        {
+            if (mac_track_list[i].valid &&
+                memcmp(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN) == 0)
+            {
+                mac_track_list[i].last_seen_ms = now;
+                found = true;
+                break;
+            }
+        }
 
-                if (!found)
+        if (!found)
+        {
+            for (int i = 0; i < MAX_MAC_TRACK; ++i)
+            {
+                if (!mac_track_list[i].valid)
                 {
-                    for (int i = 0; i < MAX_MAC_TRACK; ++i)
-                    {
-                        if (!mac_track_list[i].valid)
-                        {
-                            memcpy(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN);
-                            mac_track_list[i].last_seen_ms = now;
-                            mac_track_list[i].valid = true;
-                            ESP_LOGI(TAG, "Added MAC");
-                            macCount += 1;
-                            break;
-                        }
-                    }
-                } 
+                    memcpy(mac_track_list[i].mac, recv_info->src_addr, ESP_NOW_ETH_ALEN);
+                    mac_track_list[i].last_seen_ms = now;
+                    mac_track_list[i].valid = true;
+                    ESP_LOGI(TAG, "Added MAC");
+                    macCount += 1;
+                    break;
+                }
+            }
+        }
     }
     // CMD: prefix handling
     else if (data_len >= 4 && memcmp(data, "CMD:", 4) == 0)
@@ -352,7 +352,7 @@ void send_data_esp_now(const uint8_t *data, size_t len)
         }
         else
         {
-            //ESP_LOGI(TAG, "Sent %zu bytes of data via ESP-NOW (offset %zu)", chunk_size, offset);
+            // ESP_LOGI(TAG, "Sent %zu bytes of data via ESP-NOW (offset %zu)", chunk_size, offset);
         }
 
         offset += chunk_size;
@@ -381,12 +381,15 @@ void fade_in_drawCount(void *arg)
         vTaskDelete(NULL);
         return;
     }
-    for(int i = 0; i < 15; i++){
-        if(state == 0){
+    for (int i = 0; i < 15; i++)
+    {
+        if (state == 0)
+        {
             spi_oled_drawText(&spi_ssd1327, 86, 46, &font_30, i / 2, input_text, 0);
-            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, i , input_text, 0);
+            spi_oled_drawText(&spi_ssd1327, 85, 45, &font_30, i, input_text, 0);
         }
-        else{
+        else
+        {
             vTaskDelete(NULL);
         }
         vTaskDelay(pdMS_TO_TICKS(1000 / 15));
@@ -398,7 +401,8 @@ void fade_in_drawCount(void *arg)
 static void animation_task(void *pvParameters)
 {
     spi_oled_animation_t *anim = (spi_oled_animation_t *)pvParameters;
-    if (anim == NULL) {
+    if (anim == NULL)
+    {
         // Handle error - invalid key
         printf("Invalid animation parameters\n");
         vTaskDelete(NULL);
@@ -406,13 +410,15 @@ static void animation_task(void *pvParameters)
     }
     int current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-    while ((anim->stop_frame == -1 && anim->is_playing == true) || 
-        (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
+    while ((anim->stop_frame == -1 && anim->is_playing == true) ||
+           (anim->stop_frame != -1 && (anim->is_playing == true || current_frame != anim->stop_frame)))
     {
-        if(anim->stop_frame == -1 && anim->is_playing == false) {
+        if (anim->stop_frame == -1 && anim->is_playing == false)
+        {
             break;
         }
-        if(anim->stop_frame != -1 && anim->is_playing == false && (state == 3 || current_frame == anim->stop_frame)) break;  //Force break when state is 3
+        if (anim->stop_frame != -1 && anim->is_playing == false && (state == 3 || current_frame == anim->stop_frame))
+            break; // Force break when state is 3
         // Calculate frame data offset
         const uint8_t *frame_data = anim->animation_data +
                                     (current_frame * anim->height * bytes_per_row);
@@ -424,25 +430,27 @@ static void animation_task(void *pvParameters)
         spi_oled_drawImage(&spi_ssd1327,
                            anim->x, anim->y,
                            anim->width, anim->height,
-                           frame_data,SSD1327_GS_15);
+                           frame_data, SSD1327_GS_15);
 
         // Release SPI access
         xSemaphoreGive(spi_mutex);
 
         // Move to next frame
-        if(anim->reverse == true){
+        if (anim->reverse == true)
+        {
             current_frame--;
         }
-        else current_frame++;
+        else
+            current_frame++;
         if (current_frame >= anim->frame_count)
         {
             current_frame = 0;
         }
-        else if( current_frame < 0)
+        else if (current_frame < 0)
         {
             current_frame = anim->frame_count - 1;
         }
- 
+
         vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
     }
     vTaskDelete(NULL);
@@ -463,8 +471,9 @@ void bubble_text_task(void *arg)
     strncpy(text, input_text, sizeof(text) - 1);
     text[sizeof(text) - 1] = '\0';
 
-    for(int i = -6; i < 0; i++){
-        spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble,SSD1327_GS_15);
+    for (int i = -6; i < 0; i++)
+    {
+        spi_oled_drawImage(&spi_ssd1327, 17, i, 93, 11, (const uint8_t *)text_bubble, SSD1327_GS_15);
         spi_oled_drawText(&spi_ssd1327, 18, i, &font_10, SSD1327_GS_1, text, 91);
         vTaskDelay(pdMS_TO_TICKS(1000 / 15));
     }
@@ -605,7 +614,7 @@ void decode_Task(void *arg)
 void ping_task(void *arg)
 {
     send_data_esp_now((const uint8_t *)PING_MAGIC, PING_MAGIC_LEN);
-    //ping every 10 seconds
+    // ping every 10 seconds
     while (1)
     {
         vTaskDelay(pdMS_TO_TICKS(10000)); // 10 seconds
@@ -649,7 +658,7 @@ void detect_Task(void *arg)
             is_speaking = true;
             // Define a buffer for g711 output
             size_t g711_len = 0;
-            
+
             if (g711_output == NULL)
             {
                 printf("Failed to allocate g711 buffer\n");
@@ -668,7 +677,7 @@ void detect_Task(void *arg)
                     send_data_esp_now(g711_output, g711_len);
                 }
                 size_t num_chunks = res->vad_cache_size / (mu_chunksize * sizeof(int16_t));
-                //printf("vad_cache_size: %zu , mu_chunksize: %d, num_chunks: %zu\n", res->vad_cache_size, mu_chunksize, num_chunks);
+                // printf("vad_cache_size: %zu , mu_chunksize: %d, num_chunks: %zu\n", res->vad_cache_size, mu_chunksize, num_chunks);
                 for (size_t i = 0; i < num_chunks; i++)
                 {
                     int16_t *chunk = res->vad_cache + (i * mu_chunksize);
@@ -678,50 +687,55 @@ void detect_Task(void *arg)
 
             if (res->vad_state == VAD_SPEECH)
             {
-                //printf("vad_data_size: %zu\n", res->data_size);
-                //  Make sure we have enough data for at least one frame
+                // printf("vad_data_size: %zu\n", res->data_size);
+                //   Make sure we have enough data for at least one frame
                 g711_len = 0; // Reset for new encoding
                 encode_g711(res->data, res->data_size, g711_output, &g711_len);
-                
+
                 if (g711_len > 0)
                 {
-                    //printf("Encoded speech data: %zu bytes      Raw: %zu bytes\n", g711_len, res->data_size);
+                    // printf("Encoded speech data: %zu bytes      Raw: %zu bytes\n", g711_len, res->data_size);
                     send_data_esp_now(g711_output, g711_len);
                 }
                 mn_state = multinet->detect(model_data, res->data);
             }
-            //MultiNet words detect
-            if (mn_state == ESP_MN_STATE_DETECTING) {
+            // MultiNet words detect
+            if (mn_state == ESP_MN_STATE_DETECTING)
+            {
                 continue;
             }
 
-            if (mn_state == ESP_MN_STATE_DETECTED) {
+            if (mn_state == ESP_MN_STATE_DETECTED)
+            {
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
-                for (int i = 0; i < mn_result->num; i++) {
-                    printf("TOP %d, command_id: %d, phrase_id: %d, string:%s prob: %f\n", 
-                    i+1, mn_result->command_id[i], mn_result->phrase_id[i], mn_result->string, mn_result->prob[i]);
+                for (int i = 0; i < mn_result->num; i++)
+                {
+                    printf("TOP %d, command_id: %d, phrase_id: %d, string:%s prob: %f\n",
+                           i + 1, mn_result->command_id[i], mn_result->phrase_id[i], mn_result->string, mn_result->prob[i]);
                 }
                 printf("Playing animation for command_id: %d\n", mn_result->command_id[0]);
-                if(anim_currentCommand != NULL) anim_currentCommand->is_playing = false;
+                if (anim_currentCommand != NULL)
+                    anim_currentCommand->is_playing = false;
                 anim_currentCommand = get_animation_by_key(mn_result->command_id[0]);
                 lastState = -1;
                 is_command = true;
             }
-            if (mn_state == ESP_MN_STATE_TIMEOUT) {
+            if (mn_state == ESP_MN_STATE_TIMEOUT)
+            {
                 esp_mn_results_t *mn_result = multinet->get_results(model_data);
                 printf("timeout, string:%s\n", mn_result->string);
                 xTaskCreate(bubble_text_task, "bubbleText", 4096, mn_result->string, 5, NULL);
                 continue;
-            } 
+            }
         }
         else
         {
-            if(is_speaking == true){ //Call once per speaking
+            if (is_speaking == true)
+            { // Call once per speaking
                 printf("clean\n");
                 multinet->clean(model_data);
             }
             is_speaking = false;
-            
         }
     }
     if (buff)
@@ -732,28 +746,32 @@ void detect_Task(void *arg)
     vTaskDelete(NULL);
 }
 
-void byebye_anim(void *pvParameters){
+void byebye_anim(void *pvParameters)
+{
     spi_oled_animation_t *anim = &anim_byebye;
     int current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
-    int loop_count = 0; // Track which loop we're on
-    
-    for(int i=0; i< 3 * anim->frame_count; i++) // Changed to 4 loops
+    int loop_count = 0;                            // Track which loop we're on
+
+    for (int i = 0; i < 3 * anim->frame_count; i++) // Changed to 4 loops
     {
         const uint8_t *frame_data = anim->animation_data +
-                            (current_frame * anim->height * bytes_per_row);
-        
+                                    (current_frame * anim->height * bytes_per_row);
+
         // Determine gray scale based on loop count
         uint8_t gray_scale;
-        if (loop_count < 2) {
+        if (loop_count < 2)
+        {
             gray_scale = SSD1327_GS_15; // Full brightness for first 3 loops
-        } else {
+        }
+        else
+        {
             // Gradual fade during 4th loop: from 15 down to 0
             int fade_progress = anim->frame_count - current_frame - 1;
             gray_scale = (fade_progress * 15) / (anim->frame_count - 1);
             printf("Fade progress: %d, Gray scale: %d\n", fade_progress, gray_scale);
         }
-        
+
         // Lock SPI access
         xSemaphoreTake(spi_mutex, portMAX_DELAY);
         // Draw current frame
@@ -763,7 +781,7 @@ void byebye_anim(void *pvParameters){
                            frame_data, gray_scale);
         // Release SPI access
         xSemaphoreGive(spi_mutex);
-        
+
         // Move to next frame
         current_frame++;
         if (current_frame >= anim->frame_count)
@@ -773,7 +791,7 @@ void byebye_anim(void *pvParameters){
         }
         vTaskDelay(pdMS_TO_TICKS(anim->frame_delay_ms));
     }
-    //spi_oled_deinit(&spi_ssd1327);
+    // spi_oled_deinit(&spi_ssd1327);
     gpio_set_level(GPIO_NUM_3, 0);
     gpio_set_level(GPIO_NUM_9, 0);
     esp_deep_sleep_start();
@@ -790,7 +808,6 @@ void boot_sound(void *pvParameters)
     }
     vTaskDelete(NULL);
 }
-
 
 void byebye_sound(void *pvParameters)
 {
@@ -829,24 +846,27 @@ void init_audio_stream_buffer()
     assert(play_stream_buf);
 }
 
-
 void draw_status()
 {
-    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_5, "bbTalkie",0);
-    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie",0);
-    if(!isMicOff){
-        spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high,SSD1327_GS_15);
+    spi_oled_drawText(&spi_ssd1327, 43, 0, &font_10, SSD1327_GS_5, "bbTalkie", 0);
+    spi_oled_drawText(&spi_ssd1327, 44, 0, &font_10, SSD1327_GS_15, "bbTalkie", 0);
+    if (!isMicOff)
+    {
+        spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_high, SSD1327_GS_15);
     }
-    else{
-        spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_off,SSD1327_GS_15);
+    else
+    {
+        spi_oled_drawImage(&spi_ssd1327, 0, 0, 5, 10, (const uint8_t *)mic_off, SSD1327_GS_15);
     }
-    if(!isMute){
-        spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on,SSD1327_GS_15);
+    if (!isMute)
+    {
+        spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_on, SSD1327_GS_15);
     }
-    else{
-        spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_off,SSD1327_GS_15);
+    else
+    {
+        spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_off, SSD1327_GS_15);
     }
-    spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4,SSD1327_GS_15);
+    spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4, SSD1327_GS_15);
 }
 
 void oled_task(void *arg)
@@ -894,7 +914,7 @@ void oled_task(void *arg)
     spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     for (size_t i = 32; i > 0; i--)
     {
-        spi_oled_drawImage(&spi_ssd1327, 0, i, 128, 128, (const uint8_t *)logo, (32-i)/2);
+        spi_oled_drawImage(&spi_ssd1327, 0, i, 128, 128, (const uint8_t *)logo, (32 - i) / 2);
         vTaskDelay(pdMS_TO_TICKS(1000 / 60));
     }
     printf("logo is painted\n");
@@ -906,7 +926,8 @@ void oled_task(void *arg)
 
     while (1)
     {
-        if (isShoutdown){
+        if (isShoutdown)
+        {
             vTaskDelete(NULL);
         }
         if (is_command)
@@ -925,9 +946,10 @@ void oled_task(void *arg)
         {
             state = 0; // Idle
         }
-        if(state == 0 && macCount != lastMacCount){
+        if (state == 0 && macCount != lastMacCount)
+        {
             lastMacCount = macCount;
-            //convert macCount from int to string
+            // convert macCount from int to string
             char macCountStr[2]; // Enough space for int range + null terminator
             sprintf(macCountStr, "%d", macCount);
             spi_oled_draw_square(&spi_ssd1327, 74, 38, 36, 36, SSD1327_GS_0);
@@ -938,6 +960,9 @@ void oled_task(void *arg)
             lastState = state;
             anim_waveBar.is_playing = false;
             anim.is_playing = false;
+            anim_speaking.is_playing = false;
+            anim_receiving.is_playing = false;
+            anim_idleWaveBar.is_playing = false;
             anim_idleBar.is_playing = false;
             anim_podcast.is_playing = false;
             anim_speaker.is_playing = false;
@@ -953,22 +978,30 @@ void oled_task(void *arg)
                     xTaskCreate(animation_task, "idleBarAnim", 2048, &anim_idleBar, 5, &anim_idleBar.task_handle);
                     isFirstBoot = false;
                 }
+                else
+                {
+                    anim_idleWaveBar.is_playing = true;
+                    xTaskCreate(animation_task, "idleWaveBarAnim", 2048, &anim_idleWaveBar, 5, &anim_idleWaveBar.task_handle);
+                }
                 printf("Idle job create\n");
                 break;
             case 1: // Speaking
-                isFirstBoot = false;
                 anim_waveBar.reverse = false;
                 anim_waveBar.is_playing = true;
                 anim_podcast.is_playing = true;
+                anim_speaking.is_playing = true;
                 xTaskCreate(animation_task, "podcastAnim", 2048, &anim_podcast, 5, &anim_podcast.task_handle);
                 xTaskCreate(animation_task, "waveBarAnim", 2048, &anim_waveBar, 5, &anim_waveBar.task_handle);
+                xTaskCreate(animation_task, "speakingAnim", 2048, &anim_speaking, 5, &anim_speaking.task_handle);
                 break;
             case 2: // Receiving
                 anim_waveBar.reverse = true;
                 anim_waveBar.is_playing = true;
                 anim_speaker.is_playing = true;
-                xTaskCreate(animation_task, "podcastAnim", 2048, &anim_podcast, 5, &anim_podcast.task_handle);
+                anim_receiving.is_playing = true;
+                xTaskCreate(animation_task, "speakerAnim", 2048, &anim_speaker, 5, &anim_speaker.task_handle);
                 xTaskCreate(animation_task, "waveBarAnim", 2048, &anim_waveBar, 5, &anim_waveBar.task_handle);
+                xTaskCreate(animation_task, "receivingAnim", 2048, &anim_receiving, 5, &anim_receiving.task_handle);
                 break;
             case 3: // Command
                 // stop idleBarAnim
@@ -978,6 +1011,7 @@ void oled_task(void *arg)
                 xTaskCreate(animation_task, "idleSingleAnim", 2048, anim_currentCommand, 5, &anim_currentCommand->task_handle);
                 break;
             }
+            isFirstBoot = false;
         }
         vTaskDelay(50 / portTICK_PERIOD_MS);
     }
@@ -1053,7 +1087,7 @@ void ws2812_init(void)
 static void button_long_press_cb(void *arg, void *usr_data)
 {
     printf("Long press detected! Entering deep sleep mode...");
-    //vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
+    // vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
 
     ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
     ESP_ERROR_CHECK(led_strip_refresh(led_strip));
@@ -1066,7 +1100,6 @@ static void button_long_press_cb(void *arg, void *usr_data)
     isShoutdown = true;
     xTaskCreatePinnedToCore(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL, 0);
-    
 }
 
 static void button_single_click_cb(void *arg, void *usr_data)
@@ -1107,7 +1140,7 @@ void app_main()
         afe_config->agc_mode = AFE_AGC_MODE_WAKENET; // Use WEBRTC AGC
         afe_config->agc_compression_gain_db = 32; // The maximum gain of AGC
         afe_config->agc_target_level_dbfs = 1; // The target level of AGC */
-    afe_config->vad_min_noise_ms = 800; // The minimum duration of noise or silence in ms.
+    afe_config->vad_min_noise_ms = 800;  // The minimum duration of noise or silence in ms.
     afe_config->vad_min_speech_ms = 128; // The minimum duration of speech in ms.
     afe_config->vad_mode = VAD_MODE_1;   // The larger the mode, the higher the speech trigger probability.
     afe_config->afe_linear_gain = 3.0;

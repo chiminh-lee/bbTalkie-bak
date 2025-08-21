@@ -10,7 +10,6 @@ typedef struct
     TaskHandle_t task_handle;
 } spi_oled_animation_t;
 
-
 spi_oled_animation_t anim = {
     .x = 10,
     .y = 35,
@@ -21,8 +20,31 @@ spi_oled_animation_t anim = {
     .frame_delay_ms = 1000 / 5,
     .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
+
+spi_oled_animation_t anim_speaking = {
+    .x = 10,
+    .y = 35,
+    .width = 54,
+    .height = 41,
+    .frame_count = 6,
+    .animation_data = (const uint8_t *)speaking_single,
+    .frame_delay_ms = 1000 / 5,
+    .stop_frame = -1,
+    .reverse = false,
+    .task_handle = NULL};
+
+spi_oled_animation_t anim_receiving = {
+    .x = 10,
+    .y = 35,
+    .width = 54,
+    .height = 41,
+    .frame_count = 6,
+    .animation_data = (const uint8_t *)receiving_single,
+    .frame_delay_ms = 1000 / 5,
+    .stop_frame = -1,
+    .reverse = false,
+    .task_handle = NULL};
 
 spi_oled_animation_t anim_idleBar = {
     .x = 10,
@@ -34,8 +56,7 @@ spi_oled_animation_t anim_idleBar = {
     .frame_delay_ms = 1000 / 15,
     .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
 
 spi_oled_animation_t anim_waveBar = {
     .x = 1,
@@ -45,10 +66,21 @@ spi_oled_animation_t anim_waveBar = {
     .frame_count = 29,
     .animation_data = (const uint8_t *)wave_bar,
     .frame_delay_ms = 1000 / 30,
-    .stop_frame = 3,
+    .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
+
+spi_oled_animation_t anim_idleWaveBar = {
+    .x = 85,
+    .y = 95,
+    .width = 126,
+    .height = 40,
+    .frame_count = 36,
+    .animation_data = (const uint8_t *)idle_wave_bar,
+    .frame_delay_ms = 1000 / 15,
+    .stop_frame = -1,
+    .reverse = false,
+    .task_handle = NULL};
 
 spi_oled_animation_t anim_podcast = {
     .x = 74,
@@ -60,8 +92,7 @@ spi_oled_animation_t anim_podcast = {
     .frame_delay_ms = 1000 / 30,
     .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
 
 spi_oled_animation_t anim_speaker = {
     .x = 74,
@@ -73,8 +104,7 @@ spi_oled_animation_t anim_speaker = {
     .frame_delay_ms = 1000 / 30,
     .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
 
 spi_oled_animation_t anim_byebye = {
     .x = 0,
@@ -86,8 +116,6 @@ spi_oled_animation_t anim_byebye = {
     .frame_delay_ms = 1000 / 15,
     .stop_frame = -1,
     .reverse = false,
-    .task_handle = NULL
-};
+    .task_handle = NULL};
 
-//custom map
-
+// custom map

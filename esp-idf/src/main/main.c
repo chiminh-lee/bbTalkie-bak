@@ -86,8 +86,9 @@
 #define RST_PIN_NUM 11
 #define SPI_HOST_TAG SPI2_HOST
 
-#define GPIO_WAKEUP_1 GPIO_NUM_4
-#define GPIO_WAKEUP_2 GPIO_NUM_8
+#define GPIO_WAKEUP_1 GPIO_NUM_4 // Charger CHRG
+#define GPIO_WAKEUP_2 GPIO_NUM_8 // Button
+#define GPIO_WAKEUP_3 GPIO_NUM_5 // Charger STDBY
 
 // Button configuration
 #define BUTTON_GPIO 8           // Boot button on most ESP32 boards
@@ -1137,6 +1138,125 @@ void batteryLevel_Task(void *pvParameters)
     }
 }
 
+// ISR handler for button press
+static void IRAM_ATTR button_isr_handler(void *arg)
+{
+    // Trigger restart from ISR
+    esp_restart();
+}
+
+void charging_Task(void *pvParameters)
+{
+    // Configure GPIO8 (Button) for interrupt detection
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_WAKEUP_2),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE // Trigger on falling edge (button press)
+    };
+    gpio_config(&io_conf);
+
+    // Install GPIO ISR service if not already installed
+    gpio_install_isr_service(0);
+
+    // Add ISR handler for the button
+    gpio_isr_handler_add(GPIO_WAKEUP_2, button_isr_handler, NULL);
+    // Better ADC config for battery monitoring
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC1_GPIO7_CHANNEL, ADC_ATTEN_DB_6); // 0-2.2V range, better for battery （4.2V max / 2 by resistors）
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_5),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE};
+    gpio_config(&io_conf);
+
+    int prev_gpio4 = -1, prev_gpio5 = -1, prev_battery_level = -1;
+    uint32_t last_battery_check = 0;
+    uint32_t last_blink = 0;
+    bool blink_state = false;
+
+    while (1)
+    {
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        int gpio4 = gpio_get_level(GPIO_NUM_4);
+        int gpio5 = gpio_get_level(GPIO_NUM_5);
+        bool gpio_changed = (gpio4 != prev_gpio4 || gpio5 != prev_gpio5);
+
+        int battery_level = prev_battery_level;
+        if (now - last_battery_check >= 60000 || prev_battery_level == -1)
+        {
+            int adc_raw = adc1_get_raw(ADC1_GPIO7_CHANNEL);
+            float voltage = (adc_raw * 2.2f / 4095.0f) * 2.0f; // Convert to actual battery voltage
+
+            if (voltage >= 4.0f)
+                battery_level = 4;
+            else if (voltage >= 3.8f)
+                battery_level = 3;
+            else if (voltage >= 3.6f)
+                battery_level = 2;
+            else
+                battery_level = 1;
+
+            last_battery_check = now;
+        }
+
+        bool need_update = gpio_changed || (battery_level != prev_battery_level);
+
+        if (gpio5 == 0)
+        {
+            // Charge full
+            if (need_update)
+            {
+                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_full, SSD1327_GS_15);
+                led_color_t charge_full_color = {
+                    .r = (uint8_t)(0),
+                    .g = (uint8_t)(255),
+                    .b = (uint8_t)(0)};
+                set_led_color(charge_full_color);
+            }
+        }
+        else if (gpio4 == 0)
+        {
+            // Charging - blink
+            if (need_update)
+            {
+                led_color_t charging_color = {
+                    .r = (uint8_t)(240),
+                    .g = (uint8_t)(150),
+                    .b = (uint8_t)(0)};
+                set_led_color(charging_color);
+            }
+            if (now - last_blink >= 500 || need_update)
+            {
+                blink_state = !blink_state;
+                const uint8_t *icons[] = {battery_1, battery_2, battery_3, battery_4};
+                int show_level = (blink_state && battery_level < 4) ? battery_level : battery_level - 1;
+                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[show_level], SSD1327_GS_15);
+                last_blink = now;
+            }
+        }
+        else
+        {
+            // Not charging
+            gpio_set_level(GPIO_NUM_3, 0);
+            gpio_set_level(GPIO_NUM_9, 0);
+            esp_deep_sleep_start();
+            vTaskDelete(NULL); // Exit the task if not charging
+        }
+
+        prev_gpio4 = gpio4;
+        prev_gpio5 = gpio5;
+        prev_battery_level = battery_level;
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
 void ws2812_init(void)
 {
     ESP_LOGI(TAG, "Initializing WS2812 LED strip");
@@ -1190,7 +1310,24 @@ static void button_double_click_cb(void *arg, void *usr_data)
 
 void app_main()
 {
-
+    // Check which GPIO caused the wakeup (if any)
+    uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
+    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_1))
+    {
+        // Wakeup caused by GPIO4 (Charger CHRG)
+        printf("Wakeup caused by GPIO4 (Charger CHRG)\n");
+        xTaskCreatePinnedToCore(charging_Task, "charging", 4 * 1024, NULL, 5, NULL, 0);
+        return;
+    }
+    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_2))
+    {
+        // Wakeup caused by GPIO8 (Button)
+        printf("Wakeup caused by GPIO8 (Button)\n");
+    }
+    /*     if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_3))
+        {
+            // Wakeup caused by GPIO5 (Charger STDBY)
+        } */
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -1250,12 +1387,25 @@ void app_main()
 
     // wake up
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2),
+        .pin_bit_mask = (1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2) | (1ULL << GPIO_WAKEUP_3),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE};
     gpio_config(&io_conf);
+
+    // Enable RTC pull-ups for all wake-up pins
+    rtc_gpio_pullup_en(GPIO_WAKEUP_1);
+    rtc_gpio_pullup_en(GPIO_WAKEUP_2);
+    // rtc_gpio_pullup_en(GPIO_WAKEUP_3);
+
+    // Disable pull-downs to ensure clean pull-up
+    rtc_gpio_pulldown_dis(GPIO_WAKEUP_1);
+    rtc_gpio_pulldown_dis(GPIO_WAKEUP_2);
+    // rtc_gpio_pulldown_dis(GPIO_WAKEUP_3);
+
+    // Enable wake-up on all three GPIOs when any goes low
+    esp_sleep_enable_ext1_wakeup((1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2), ESP_EXT1_WAKEUP_ANY_LOW); //| (1ULL << GPIO_WAKEUP_3)
 
     // Initialize the button
     button_config_t btn_cfg = {0};
@@ -1272,17 +1422,6 @@ void app_main()
     iot_button_register_cb(btn, BUTTON_LONG_PRESS_START, NULL, button_long_press_cb, NULL);
     iot_button_register_cb(btn, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
     iot_button_register_cb(btn, BUTTON_DOUBLE_CLICK, NULL, button_double_click_cb, NULL);
-
-    ESP_LOGI(TAG, "Button initialized and ready");
-
-    // Enable wake-up on GPIO4 and GPIO8 when they go low
-    rtc_gpio_pullup_en(GPIO_WAKEUP_1);
-    rtc_gpio_pullup_en(GPIO_WAKEUP_2);
-
-    // Optionally disable pull-downs to ensure clean pull-up
-    rtc_gpio_pulldown_dis(GPIO_WAKEUP_1);
-    rtc_gpio_pulldown_dis(GPIO_WAKEUP_2);
-    esp_sleep_enable_ext1_wakeup((1ULL << GPIO_WAKEUP_2), ESP_EXT1_WAKEUP_ANY_LOW); //(1ULL << GPIO_WAKEUP_1) |
 
     init_audio_stream_buffer();
     xTaskCreatePinnedToCore(oled_task, "oled", 4 * 1024, NULL, 5, NULL, 0);

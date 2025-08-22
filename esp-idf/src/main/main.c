@@ -66,7 +66,7 @@
 #include "driver/adc.h"
 #include "soc/adc_channel.h"
 
-#include "led_strip.h"
+#include "led.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "iot_button.h"
@@ -85,10 +85,6 @@
 #define DC_PIN_NUM 12
 #define RST_PIN_NUM 11
 #define SPI_HOST_TAG SPI2_HOST
-
-#define WS2812_GPIO_PIN 15
-#define WS2812_LED_COUNT 1
-static led_strip_handle_t led_strip;
 
 #define GPIO_WAKEUP_1 GPIO_NUM_4
 #define GPIO_WAKEUP_2 GPIO_NUM_8
@@ -1259,4 +1255,5 @@ void app_main()
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(ping_task, "ping", 2 * 1024, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(led_control_task, "led_control", 2 * 1024, NULL, 5, NULL, 0);
 }

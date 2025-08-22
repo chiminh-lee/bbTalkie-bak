@@ -134,7 +134,7 @@ static QueueHandle_t s_recv_queue = NULL;
 static uint8_t broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // Broadcast MAC address (all ones)
 volatile bool is_receiving = false;
 volatile bool is_speaking = false;
-bool isShoutdown = false;
+bool isShutdown = false;
 bool isMicOff = false;
 bool isMute = false;
 bool is_command = false;
@@ -298,6 +298,7 @@ void stopAllAnimation()
     anim_idleBar.is_playing = false;
     anim_podcast.is_playing = false;
     anim_speaker.is_playing = false;
+    anim_currentCommand->is_playing = false;
 }
 
 void bubble_text_task(void *arg)
@@ -972,12 +973,8 @@ void oled_task(void *arg)
 
     bool isFirstBoot = true;
 
-    while (1)
+    while (!isShutdown)
     {
-        if (isShoutdown)
-        {
-            vTaskDelete(NULL);
-        }
         if (is_command)
         {
             state = 3;
@@ -1056,6 +1053,7 @@ void oled_task(void *arg)
         }
         vTaskDelay(50 / portTICK_PERIOD_MS);
     }
+    vTaskDelete(NULL);
 }
 
 void batteryLevel_Task(void *pvParameters)
@@ -1133,8 +1131,8 @@ static void button_long_press_cb(void *arg, void *usr_data)
     ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
     ESP_ERROR_CHECK(led_strip_refresh(led_strip));
 
+    isShutdown = true;
     stopAllAnimation();
-    isShoutdown = true;
     xTaskCreatePinnedToCore(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL, 0);
 }

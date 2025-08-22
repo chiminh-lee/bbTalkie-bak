@@ -911,7 +911,6 @@ void draw_status()
     {
         spi_oled_drawImage(&spi_ssd1327, 6, 0, 9, 10, (const uint8_t *)volume_off, SSD1327_GS_15);
     }
-    spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4, SSD1327_GS_15);
 }
 
 void oled_task(void *arg)
@@ -966,6 +965,7 @@ void oled_task(void *arg)
     vTaskDelay(800 / portTICK_PERIOD_MS);
     spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     draw_status();
+    spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4, SSD1327_GS_15);
 
     bool isFirstBoot = true;
 

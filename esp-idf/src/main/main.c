@@ -66,7 +66,7 @@
 #include "driver/adc.h"
 #include "soc/adc_channel.h"
 
-#include "led.h"
+#include "include/led.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "iot_button.h"
@@ -295,7 +295,8 @@ void stopAllAnimation()
     anim_idleBar.is_playing = false;
     anim_podcast.is_playing = false;
     anim_speaker.is_playing = false;
-    anim_currentCommand->is_playing = false;
+     if (anim_currentCommand != NULL)
+                anim_currentCommand->is_playing = false;
 }
 
 void bubble_text_task(void *arg)
@@ -794,6 +795,7 @@ void detect_Task(void *arg)
 
 void byebye_anim(void *pvParameters)
 {
+    printf("byebye_anim\n");
     spi_oled_animation_t *anim = &anim_byebye;
     int current_frame = 0;
     uint8_t bytes_per_row = (anim->width + 1) / 2; // 4bpp packing
@@ -914,9 +916,8 @@ void draw_status()
     }
 }
 
-void oled_task(void *arg)
-{
-    // This task is responsible for handling the OLED display
+void setup_oled(){
+        // This task is responsible for handling the OLED display
     spi_mutex = xSemaphoreCreateMutex();
     spi_bus_config_t spi_bus_cfg = {
         .miso_io_num = -1,
@@ -954,7 +955,11 @@ void oled_task(void *arg)
     gpio_config(&io_conf2);
 
     spi_oled_init(&spi_ssd1327);
+}
 
+void oled_task(void *arg)
+{
+    setup_oled();
     printf("screen is on\n");
     spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     for (size_t i = 32; i > 0; i--)
@@ -1099,7 +1104,7 @@ void batteryLevel_Task(void *pvParameters)
         }
 
         bool need_update = gpio_changed || (battery_level != prev_battery_level);
-
+        const uint8_t *icons[] = {(const uint8_t *)battery_1, (const uint8_t *)battery_2, (const uint8_t *)battery_3, (const uint8_t *)battery_4};
         if (gpio5 == 0)
         {
             // Charge full
@@ -1114,8 +1119,7 @@ void batteryLevel_Task(void *pvParameters)
             if (now - last_blink >= 500 || need_update)
             {
                 blink_state = !blink_state;
-                const uint8_t *icons[] = {battery_1, battery_2, battery_3, battery_4};
-                int show_level = (blink_state && battery_level < 4) ? battery_level : battery_level - 1;
+                int show_level = (blink_state) ? battery_level -1 : battery_level - 2;
                 spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[show_level], SSD1327_GS_15);
                 last_blink = now;
             }
@@ -1125,7 +1129,6 @@ void batteryLevel_Task(void *pvParameters)
             // Not charging
             if (need_update)
             {
-                const uint8_t *icons[] = {battery_1, battery_2, battery_3, battery_4};
                 spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[battery_level - 1], SSD1327_GS_15);
             }
         }
@@ -1166,19 +1169,21 @@ void charging_Task(void *pvParameters)
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(ADC1_GPIO7_CHANNEL, ADC_ATTEN_DB_6); // 0-2.2V range, better for battery （4.2V max / 2 by resistors）
 
-    gpio_config_t io_conf = {
+    gpio_config_t io_conf2 = {
         .pin_bit_mask = (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_5),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE};
-    gpio_config(&io_conf);
+    gpio_config(&io_conf2);
 
     int prev_gpio4 = -1, prev_gpio5 = -1, prev_battery_level = -1;
     uint32_t last_battery_check = 0;
     uint32_t last_blink = 0;
     bool blink_state = false;
-
+    setup_oled();
+    gpio_set_level(GPIO_NUM_3, 1);
+    gpio_set_level(GPIO_NUM_9, 1);
     while (1)
     {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -1213,10 +1218,7 @@ void charging_Task(void *pvParameters)
             if (need_update)
             {
                 spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_full, SSD1327_GS_15);
-                led_color_t charge_full_color = {
-                    .r = (uint8_t)(0),
-                    .g = (uint8_t)(255),
-                    .b = (uint8_t)(0)};
+                led_color_t charge_full_color = {0, 255, 0};
                 set_led_color(charge_full_color);
             }
         }
@@ -1225,17 +1227,14 @@ void charging_Task(void *pvParameters)
             // Charging - blink
             if (need_update)
             {
-                led_color_t charging_color = {
-                    .r = (uint8_t)(240),
-                    .g = (uint8_t)(150),
-                    .b = (uint8_t)(0)};
+                led_color_t charging_color = {240, 150, 0};
                 set_led_color(charging_color);
             }
             if (now - last_blink >= 500 || need_update)
             {
                 blink_state = !blink_state;
-                const uint8_t *icons[] = {battery_1, battery_2, battery_3, battery_4};
-                int show_level = (blink_state && battery_level < 4) ? battery_level : battery_level - 1;
+                const uint8_t *icons[] = {(const uint8_t *)battery_1, (const uint8_t *)battery_2, (const uint8_t *)battery_3, (const uint8_t *)battery_4};
+                int show_level = (blink_state) ? battery_level - 1: battery_level - 2;
                 spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[show_level], SSD1327_GS_15);
                 last_blink = now;
             }
@@ -1243,6 +1242,7 @@ void charging_Task(void *pvParameters)
         else
         {
             // Not charging
+            printf("not charging\n");
             gpio_set_level(GPIO_NUM_3, 0);
             gpio_set_level(GPIO_NUM_9, 0);
             esp_deep_sleep_start();
@@ -1279,18 +1279,168 @@ void ws2812_init(void)
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
 }
 
+
+// Smooth transition between two colors
+static void transition_to_color(led_color_t from, led_color_t to)
+{
+    for (int step = 0; step <= TRANSITION_STEPS; step++)
+    {
+        float t = (float)step / TRANSITION_STEPS;
+
+        led_color_t current = {
+            .r = lerp_color(from.r, to.r, t),
+            .g = lerp_color(from.g, to.g, t),
+            .b = lerp_color(from.b, to.b, t)};
+
+        set_led_color(current);
+        vTaskDelay(pdMS_TO_TICKS(TRANSITION_DELAY_MS));
+
+        // Check for state changes during transition
+        if (is_speaking)
+            break; // Priority to speaking state
+    }
+}
+
+void led_control_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "LED control task started");
+
+    // Define color states
+    led_color_t darker_teal = {DARKER_TEAL_R, DARKER_TEAL_G, DARKER_TEAL_B};
+    led_color_t receiving_green = {RECEIVING_GREEN_R, RECEIVING_GREEN_G, RECEIVING_GREEN_B};
+    led_color_t speaking_blue = {SPEAKING_BLUE_R, SPEAKING_BLUE_G, SPEAKING_BLUE_B};
+
+    // Current state tracking
+    typedef enum
+    {
+        STATE_IDLE,
+        STATE_RECEIVING,
+        STATE_SPEAKING,
+        STATE_TRANSITION_TO_RECEIVING,
+        STATE_TRANSITION_TO_IDLE,
+        STATE_TRANSITION_TO_SPEAKING
+    } led_state_t;
+
+    led_state_t current_state = STATE_IDLE;
+    led_state_t previous_state = STATE_IDLE;
+    led_color_t current_color = darker_teal;
+
+    // Set initial color
+    set_led_color(darker_teal);
+
+    uint32_t breathing_start_time = 0;
+
+    while (!isShutdown)
+    {
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        // Determine desired state based on flags
+        led_state_t desired_state;
+        if (is_speaking)
+        {
+            desired_state = STATE_SPEAKING;
+        }
+        else if (is_receiving)
+        {
+            desired_state = STATE_RECEIVING;
+        }
+        else
+        {
+            desired_state = STATE_IDLE;
+        }
+
+        // Handle state transitions
+        if (desired_state != current_state)
+        {
+            ESP_LOGI(TAG, "State change: %d -> %d", current_state, desired_state);
+            previous_state = current_state;
+
+            switch (desired_state)
+            {
+            case STATE_SPEAKING:
+                current_state = STATE_TRANSITION_TO_SPEAKING;
+                breathing_start_time = current_time; // Reset breathing timer for blue
+                break;
+            case STATE_RECEIVING:
+                current_state = STATE_TRANSITION_TO_RECEIVING;
+                breathing_start_time = current_time; // Reset breathing timer for green
+                break;
+            case STATE_IDLE:
+                current_state = STATE_TRANSITION_TO_IDLE;
+                break;
+            default:
+                break;
+            }
+        }
+
+        // Handle current state
+        switch (current_state)
+        {
+        case STATE_TRANSITION_TO_SPEAKING:
+            transition_to_color(current_color, speaking_blue);
+            current_color = speaking_blue;
+            current_state = STATE_SPEAKING;
+            break;
+
+        case STATE_TRANSITION_TO_RECEIVING:
+            transition_to_color(current_color, receiving_green);
+            current_color = receiving_green;
+            current_state = STATE_RECEIVING;
+            break;
+
+        case STATE_TRANSITION_TO_IDLE:
+            transition_to_color(current_color, darker_teal);
+            current_color = darker_teal;
+            current_state = STATE_IDLE;
+            break;
+
+        case STATE_SPEAKING:
+            // Breathing effect with blue color
+            {
+                float multiplier = breathing_multiplier(current_time - breathing_start_time);
+                led_color_t breathing_color = {
+                    .r = (uint8_t)(speaking_blue.r * multiplier),
+                    .g = (uint8_t)(speaking_blue.g * multiplier),
+                    .b = (uint8_t)(speaking_blue.b * multiplier)};
+                set_led_color(breathing_color);
+                vTaskDelay(pdMS_TO_TICKS(BREATHING_PERIOD_MS / BREATHING_STEPS));
+            }
+            break;
+
+        case STATE_RECEIVING:
+            // Breathing effect with green color
+            {
+                float multiplier = breathing_multiplier(current_time - breathing_start_time);
+                led_color_t breathing_color = {
+                    .r = (uint8_t)(receiving_green.r * multiplier),
+                    .g = (uint8_t)(receiving_green.g * multiplier),
+                    .b = (uint8_t)(receiving_green.b * multiplier)};
+                set_led_color(breathing_color);
+                vTaskDelay(pdMS_TO_TICKS(BREATHING_PERIOD_MS / BREATHING_STEPS));
+            }
+            break;
+
+        case STATE_IDLE:
+        default:
+            // Solid darker teal
+            set_led_color(darker_teal);
+            vTaskDelay(pdMS_TO_TICKS(50));
+            break;
+        }
+    }
+    vTaskDelete(NULL);
+}
+
 static void button_long_press_cb(void *arg, void *usr_data)
 {
     printf("Long press detected! Entering deep sleep mode...");
     // vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
 
-    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip, 0, 0, 0, 0));
-    ESP_ERROR_CHECK(led_strip_refresh(led_strip));
 
     isShutdown = true;
     stopAllAnimation();
-    xTaskCreatePinnedToCore(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL, 0);
-    xTaskCreatePinnedToCore(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL, 0);
+    xTaskCreate(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL);
 }
 
 static void button_single_click_cb(void *arg, void *usr_data)
@@ -1311,6 +1461,7 @@ static void button_double_click_cb(void *arg, void *usr_data)
 void app_main()
 {
     // Check which GPIO caused the wakeup (if any)
+    ws2812_init();
     uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
     if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_1))
     {
@@ -1338,7 +1489,6 @@ void app_main()
     ESP_ERROR_CHECK(ret);
 
     init_esp_now();
-    ws2812_init();
 
     ESP_ERROR_CHECK(esp_board_init(SAMPLE_RATE, 1, BIT_DEPTH));
 
@@ -1432,7 +1582,7 @@ void app_main()
     // xTaskCreatePinnedToCore(play_audio_task, "music", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(decode_Task, "decode", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
-    xTaskCreatePinnedToCore(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL, 0);
-    xTaskCreatePinnedToCore(ping_task, "ping", 2 * 1024, NULL, 5, NULL, 0);
-    xTaskCreatePinnedToCore(led_control_task, "led_control", 2 * 1024, NULL, 5, NULL, 0);
+    xTaskCreate(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(ping_task, "ping", 4 * 1024, NULL, 5, NULL);
+    xTaskCreate(led_control_task, "led_control", 4 * 1024, NULL, 5, NULL);
 }

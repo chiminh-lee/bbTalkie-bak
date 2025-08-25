@@ -957,6 +957,90 @@ void setup_oled(){
     spi_oled_init(&spi_ssd1327);
 }
 
+void batteryLevel_Task(void *pvParameters)
+{
+    // Better ADC config for battery monitoring
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC1_GPIO7_CHANNEL, ADC_ATTEN_DB_6); // 0-2.2V range, better for battery （4.2V max / 2 by resistors）
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_5),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE};
+    gpio_config(&io_conf);
+
+    int prev_gpio4 = -1, prev_gpio5 = -1, prev_battery_level = -1;
+    uint32_t last_battery_check = 0;
+    uint32_t last_blink = 0;
+    bool blink_state = false;
+
+    while (!isShutdown)
+    {
+        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        int gpio4 = gpio_get_level(GPIO_NUM_4);
+        int gpio5 = gpio_get_level(GPIO_NUM_5);
+        bool gpio_changed = (gpio4 != prev_gpio4 || gpio5 != prev_gpio5);
+
+        int battery_level = prev_battery_level;
+        if (now - last_battery_check >= 60000 || prev_battery_level == -1)
+        {
+            int adc_raw = adc1_get_raw(ADC1_GPIO7_CHANNEL);
+            float voltage = (adc_raw * 2.2f / 4095.0f) * 2.0f; // Convert to actual battery voltage
+
+            if (voltage >= 4.0f)
+                battery_level = 4;
+            else if (voltage >= 3.8f)
+                battery_level = 3;
+            else if (voltage >= 3.6f)
+                battery_level = 2;
+            else
+                battery_level = 1;
+
+            last_battery_check = now;
+        }
+
+        bool need_update = gpio_changed || (battery_level != prev_battery_level);
+        const uint8_t *icons[] = {(const uint8_t *)battery_1, (const uint8_t *)battery_2, (const uint8_t *)battery_3, (const uint8_t *)battery_4};
+        if (gpio5 == 0)
+        {
+            // Charge full
+            if (need_update)
+            {
+                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_full, SSD1327_GS_15);
+            }
+        }
+        else if (gpio4 == 0)
+        {
+            // Charging - blink
+            if (now - last_blink >= 500 || need_update)
+            {
+                blink_state = !blink_state;
+                int show_level = (blink_state) ? battery_level -1 : battery_level - 2;
+                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[show_level], SSD1327_GS_15);
+                last_blink = now;
+            }
+        }
+        else
+        {
+            // Not charging
+            if (need_update)
+            {
+                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[battery_level - 1], SSD1327_GS_15);
+            }
+        }
+
+        prev_gpio4 = gpio4;
+        prev_gpio5 = gpio5;
+        prev_battery_level = battery_level;
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    vTaskDelete(NULL);
+}
+
 void oled_task(void *arg)
 {
     setup_oled();
@@ -971,7 +1055,7 @@ void oled_task(void *arg)
     vTaskDelay(800 / portTICK_PERIOD_MS);
     spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     draw_status();
-    spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_4, SSD1327_GS_15);
+    xTaskCreate(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL);
 
     bool isFirstBoot = true;
 
@@ -1058,89 +1142,6 @@ void oled_task(void *arg)
     vTaskDelete(NULL);
 }
 
-void batteryLevel_Task(void *pvParameters)
-{
-    // Better ADC config for battery monitoring
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC1_GPIO7_CHANNEL, ADC_ATTEN_DB_6); // 0-2.2V range, better for battery （4.2V max / 2 by resistors）
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_5),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE};
-    gpio_config(&io_conf);
-
-    int prev_gpio4 = -1, prev_gpio5 = -1, prev_battery_level = -1;
-    uint32_t last_battery_check = 0;
-    uint32_t last_blink = 0;
-    bool blink_state = false;
-
-    while (1)
-    {
-        uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-        int gpio4 = gpio_get_level(GPIO_NUM_4);
-        int gpio5 = gpio_get_level(GPIO_NUM_5);
-        bool gpio_changed = (gpio4 != prev_gpio4 || gpio5 != prev_gpio5);
-
-        int battery_level = prev_battery_level;
-        if (now - last_battery_check >= 60000 || prev_battery_level == -1)
-        {
-            int adc_raw = adc1_get_raw(ADC1_GPIO7_CHANNEL);
-            float voltage = (adc_raw * 2.2f / 4095.0f) * 2.0f; // Convert to actual battery voltage
-
-            if (voltage >= 4.0f)
-                battery_level = 4;
-            else if (voltage >= 3.8f)
-                battery_level = 3;
-            else if (voltage >= 3.6f)
-                battery_level = 2;
-            else
-                battery_level = 1;
-
-            last_battery_check = now;
-        }
-
-        bool need_update = gpio_changed || (battery_level != prev_battery_level);
-        const uint8_t *icons[] = {(const uint8_t *)battery_1, (const uint8_t *)battery_2, (const uint8_t *)battery_3, (const uint8_t *)battery_4};
-        if (gpio5 == 0)
-        {
-            // Charge full
-            if (need_update)
-            {
-                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)battery_full, SSD1327_GS_15);
-            }
-        }
-        else if (gpio4 == 0)
-        {
-            // Charging - blink
-            if (now - last_blink >= 500 || need_update)
-            {
-                blink_state = !blink_state;
-                int show_level = (blink_state) ? battery_level -1 : battery_level - 2;
-                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[show_level], SSD1327_GS_15);
-                last_blink = now;
-            }
-        }
-        else
-        {
-            // Not charging
-            if (need_update)
-            {
-                spi_oled_drawImage(&spi_ssd1327, 112, 0, 16, 10, (const uint8_t *)icons[battery_level - 1], SSD1327_GS_15);
-            }
-        }
-
-        prev_gpio4 = gpio4;
-        prev_gpio5 = gpio5;
-        prev_battery_level = battery_level;
-
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-}
-
 // ISR handler for button press
 static void IRAM_ATTR button_isr_handler(void *arg)
 {
@@ -1182,8 +1183,7 @@ void charging_Task(void *pvParameters)
     uint32_t last_blink = 0;
     bool blink_state = false;
     setup_oled();
-    gpio_set_level(GPIO_NUM_3, 1);
-    gpio_set_level(GPIO_NUM_9, 1);
+    spi_oled_framebuffer_clear(&spi_ssd1327, SSD1327_GS_0);
     while (1)
     {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -1435,10 +1435,9 @@ static void button_long_press_cb(void *arg, void *usr_data)
 {
     printf("Long press detected! Entering deep sleep mode...");
     // vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
-
-
     isShutdown = true;
     stopAllAnimation();
+    vTaskDelay(pdMS_TO_TICKS(100));
     xTaskCreate(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL);
     xTaskCreate(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL);
 }
@@ -1463,18 +1462,6 @@ void app_main()
     // Check which GPIO caused the wakeup (if any)
     ws2812_init();
     uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_1))
-    {
-        // Wakeup caused by GPIO4 (Charger CHRG)
-        printf("Wakeup caused by GPIO4 (Charger CHRG)\n");
-        xTaskCreatePinnedToCore(charging_Task, "charging", 4 * 1024, NULL, 5, NULL, 0);
-        return;
-    }
-    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_2))
-    {
-        // Wakeup caused by GPIO8 (Button)
-        printf("Wakeup caused by GPIO8 (Button)\n");
-    }
     /*     if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_3))
         {
             // Wakeup caused by GPIO5 (Charger STDBY)
@@ -1557,6 +1544,19 @@ void app_main()
     // Enable wake-up on all three GPIOs when any goes low
     esp_sleep_enable_ext1_wakeup((1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2), ESP_EXT1_WAKEUP_ANY_LOW); //| (1ULL << GPIO_WAKEUP_3)
 
+    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_1))
+    {
+        // Wakeup caused by GPIO4 (Charger CHRG)
+        printf("Wakeup caused by GPIO4 (Charger CHRG)\n");
+        xTaskCreatePinnedToCore(charging_Task, "charging", 4 * 1024, NULL, 5, NULL, 0);
+        return;
+    }
+    if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_2))
+    {
+        // Wakeup caused by GPIO8 (Button)
+        printf("Wakeup caused by GPIO8 (Button)\n");
+    }
+
     // Initialize the button
     button_config_t btn_cfg = {0};
     button_gpio_config_t gpio_cfg = {
@@ -1582,7 +1582,6 @@ void app_main()
     // xTaskCreatePinnedToCore(play_audio_task, "music", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(decode_Task, "decode", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
-    xTaskCreate(batteryLevel_Task, "battery", 4 * 1024, NULL, 5, NULL);
     xTaskCreate(ping_task, "ping", 4 * 1024, NULL, 5, NULL);
     xTaskCreate(led_control_task, "led_control", 4 * 1024, NULL, 5, NULL);
 }

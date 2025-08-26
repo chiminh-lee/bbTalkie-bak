@@ -66,6 +66,7 @@
 #include "driver/adc.h"
 #include "soc/adc_channel.h"
 
+#include "include/agc.h"
 #include "include/led.h"
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
@@ -145,6 +146,56 @@ struct spi_ssd1327 spi_ssd1327 = {
     .spi_handle = &oled_dev_handle,
 };
 SemaphoreHandle_t spi_mutex;
+
+// AGC playback
+// Initialize AGC
+agc_t agc_custom = {
+    .current_gain = 1.0f,
+    .target_rms = TARGET_RMS,
+    .attack_rate = AGC_ATTACK,
+    .release_rate = AGC_RELEASE
+};
+
+// Calculate RMS of audio buffer
+float calculate_rms(int16_t* buffer, size_t samples) {
+    float sum = 0.0f;
+    for (size_t i = 0; i < samples; i++) {
+        float sample = (float)buffer[i];
+        sum += sample * sample;
+    }
+    return sqrtf(sum / samples);
+}
+
+// Apply AGC to audio buffer
+void apply_agc(int16_t* buffer, size_t samples, agc_t* agc) {
+    // Calculate current RMS level
+    float current_rms = calculate_rms(buffer, samples);
+    
+    // Avoid division by zero
+    if (current_rms < 1.0f) current_rms = 1.0f;
+    
+    // Calculate desired gain
+    float desired_gain = agc->target_rms / current_rms;
+    
+    // Apply attack/release smoothing
+    float rate = (desired_gain < agc->current_gain) ? agc->attack_rate : agc->release_rate;
+    agc->current_gain += rate * (desired_gain - agc->current_gain);
+    
+    // Clamp gain to reasonable limits
+    if (agc->current_gain < MIN_GAIN) agc->current_gain = MIN_GAIN;
+    if (agc->current_gain > MAX_GAIN) agc->current_gain = MAX_GAIN;
+    
+    // Apply gain to all samples
+    for (size_t i = 0; i < samples; i++) {
+        float sample = (float)buffer[i] * agc->current_gain;
+        
+        // Clamp to prevent overflow
+        if (sample > 32767.0f) sample = 32767.0f;
+        if (sample < -32768.0f) sample = -32768.0f;
+        
+        buffer[i] = (int16_t)sample;
+    }
+}
 
 // Structure to hold received data
 typedef struct
@@ -870,15 +921,16 @@ void byebye_sound(void *pvParameters)
 void i2s_writer_task(void *arg)
 {
     uint8_t i2s_buf[PLAY_CHUNK_SIZE];
-
     while (1)
     {
         // Block until enough PCM bytes are available
         size_t received = xStreamBufferReceive(play_stream_buf, i2s_buf, PLAY_CHUNK_SIZE, portMAX_DELAY);
-
         if (received > 0 && !isMute)
         {
-            printf("Write %zu bytes to I2S\n", received);
+            // Apply AGC to the audio buffer
+            apply_agc((int16_t*)i2s_buf, received / 2, &agc_custom);
+            
+            printf("Write %zu bytes to I2S (gain: %.2f)\n", received, agc_custom.current_gain);
             esp_err_t ret = esp_audio_play((const int16_t *)i2s_buf, received / 2, portMAX_DELAY);
             if (ret != ESP_OK)
             {
@@ -1488,7 +1540,7 @@ void app_main()
     afe_config->vad_min_noise_ms = 800;  // The minimum duration of noise or silence in ms.
     afe_config->vad_min_speech_ms = 128; // The minimum duration of speech in ms.
     afe_config->vad_mode = VAD_MODE_1;   // The larger the mode, the higher the speech trigger probability.
-    afe_config->afe_linear_gain = 3.0;
+    afe_config->afe_linear_gain = 2.0;
 
     afe_handle = esp_afe_handle_from_config(afe_config);
     esp_afe_sr_data_t *afe_data = afe_handle->create_from_config(afe_config);
@@ -1499,6 +1551,7 @@ void app_main()
 
     // printf afe_config->agc_init andafe_config_.agc_mode and afe_config->agc_compression_gain_db and afe_config->agc_target_level_dbfs
     printf("agc_init:%d, agc_mode:%d, agc_compression_gain_db:%d, agc_target_level_dbfs:%d\n", afe_config->agc_init, afe_config->agc_mode, afe_config->agc_compression_gain_db, afe_config->agc_target_level_dbfs);
+    //printf("agc_wakenet_init:%d\n", afe_config->wakenet_init);
 
     gpio_config_t io_conf_3 = {
         .pin_bit_mask = (1ULL << GPIO_NUM_3),  // Select GPIO3

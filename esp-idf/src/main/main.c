@@ -138,6 +138,8 @@ bool isMute = false;
 bool is_command = false;
 int state = 0; // 0: idle, 1: speaking, 2: receiving, 3: command
 int lastState = -1;
+static button_handle_t btn = NULL;
+static bool button_initialized = false;
 static const char *TAG = "bbTalkie";
 spi_device_handle_t oled_dev_handle;
 struct spi_ssd1327 spi_ssd1327 = {
@@ -1490,15 +1492,28 @@ void led_control_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+static void cleanup_button(void)
+{
+    if (btn != NULL && button_initialized) {
+        iot_button_delete(btn);
+        btn = NULL;
+        button_initialized = false;
+        printf("Button cleaned up\n");
+    }
+}
+
 static void button_long_press_cb(void *arg, void *usr_data)
 {
-    printf("Long press detected! Entering deep sleep mode...");
-    // vTaskDelay(pdMS_TO_TICKS(1500)); // Let log message print
+    printf("Long press detected! Entering deep sleep mode...\n");
+    
+    
     isShutdown = true;
     stopAllAnimation();
     vTaskDelay(pdMS_TO_TICKS(100));
+    
     xTaskCreate(byebye_sound, "byebyeSound", 4 * 1024, NULL, 5, NULL);
     xTaskCreate(byebye_anim, "byebyeAnim", 4 * 1024, NULL, 5, NULL);
+    
 }
 
 static void button_single_click_cb(void *arg, void *usr_data)
@@ -1520,15 +1535,65 @@ static void button_double_click_cb(void *arg, void *usr_data)
     draw_status();
 }
 
+static esp_err_t init_button(void)
+{
+    // Clean up any existing button first
+    cleanup_button();
+    
+    // Reset the button GPIO explicitly
+    gpio_reset_pin(BUTTON_GPIO);
+    vTaskDelay(pdMS_TO_TICKS(10)); // Small delay for GPIO to settle
+    
+    // Initialize the button
+    button_config_t btn_cfg = {0};
+    button_gpio_config_t gpio_cfg = {
+        .gpio_num = BUTTON_GPIO,
+        .active_level = BUTTON_ACTIVE_LEVEL,
+        .enable_power_save = true,
+    };
+
+    esp_err_t ret = iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &btn);
+    if (ret != ESP_OK) {
+        printf("Failed to create button device: %s\n", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Register event callbacks
+    ret = iot_button_register_cb(btn, BUTTON_LONG_PRESS_START, NULL, button_long_press_cb, NULL);
+    if (ret != ESP_OK) {
+        printf("Failed to register long press callback\n");
+        cleanup_button();
+        return ret;
+    }
+    
+    ret = iot_button_register_cb(btn, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
+    if (ret != ESP_OK) {
+        printf("Failed to register single click callback\n");
+        cleanup_button();
+        return ret;
+    }
+    
+    ret = iot_button_register_cb(btn, BUTTON_DOUBLE_CLICK, NULL, button_double_click_cb, NULL);
+    if (ret != ESP_OK) {
+        printf("Failed to register double click callback\n");
+        cleanup_button();
+        return ret;
+    }
+
+    button_initialized = true;
+    printf("Button initialized successfully\n");
+    return ESP_OK;
+}
+
 void app_main()
 {
     // Check which GPIO caused the wakeup (if any)
     ws2812_init();
     uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-    /*     if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_3))
-        {
-            // Wakeup caused by GPIO5 (Charger STDBY)
-        } */
+    
+    // Reset critical flags first
+    isShutdown = false;
+    
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -1544,49 +1609,43 @@ void app_main()
 
     models = esp_srmodel_init("model");
     afe_config_t *afe_config = afe_config_init(esp_get_input_format(), models, AFE_TYPE_SR, AFE_MODE_LOW_COST);
-    /*     afe_config->agc_init = true; // Enable AGC
-        afe_config->agc_mode = AFE_AGC_MODE_WAKENET; // Use WEBRTC AGC
-        afe_config->agc_compression_gain_db = 32; // The maximum gain of AGC
-        afe_config->agc_target_level_dbfs = 1; // The target level of AGC */
-    afe_config->vad_min_noise_ms = 800;  // The minimum duration of noise or silence in ms.
-    afe_config->vad_min_speech_ms = 128; // The minimum duration of speech in ms.
-    afe_config->vad_mode = VAD_MODE_1;   // The larger the mode, the higher the speech trigger probability.
+    
+    afe_config->vad_min_noise_ms = 800;
+    afe_config->vad_min_speech_ms = 128;
+    afe_config->vad_mode = VAD_MODE_1;  // The larger the mode, the higher the speech trigger probability.
     afe_config->afe_linear_gain = 2.0;
 
     afe_handle = esp_afe_handle_from_config(afe_config);
     esp_afe_sr_data_t *afe_data = afe_handle->create_from_config(afe_config);
     afe_config_free(afe_config);
 
-    // printf afe_config->afe_linear_gain
     printf("afe_linear_gain:%f\n", afe_config->afe_linear_gain);
+    printf("agc_init:%d, agc_mode:%d, agc_compression_gain_db:%d, agc_target_level_dbfs:%d\n", 
+           afe_config->agc_init, afe_config->agc_mode, afe_config->agc_compression_gain_db, afe_config->agc_target_level_dbfs);
 
-    // printf afe_config->agc_init andafe_config_.agc_mode and afe_config->agc_compression_gain_db and afe_config->agc_target_level_dbfs
-    printf("agc_init:%d, agc_mode:%d, agc_compression_gain_db:%d, agc_target_level_dbfs:%d\n", afe_config->agc_init, afe_config->agc_mode, afe_config->agc_compression_gain_db, afe_config->agc_target_level_dbfs);
-    //printf("agc_wakenet_init:%d\n", afe_config->wakenet_init);
-
+    // Configure output GPIOs first
     gpio_config_t io_conf_3 = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_3),  // Select GPIO3
-        .mode = GPIO_MODE_OUTPUT,              // Set as output mode
-        .pull_up_en = GPIO_PULLUP_DISABLE,     // Disable pull-up
-        .pull_down_en = GPIO_PULLDOWN_DISABLE, // Disable pull-down
-        .intr_type = GPIO_INTR_DISABLE,        // Disable interrupt
+        .pin_bit_mask = (1ULL << GPIO_NUM_3),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf_3);
 
     gpio_config_t io_conf_9 = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_9),  // Select GPIO9
-        .mode = GPIO_MODE_OUTPUT,              // Set as output mode
-        .pull_up_en = GPIO_PULLUP_DISABLE,     // Disable pull-up
-        .pull_down_en = GPIO_PULLDOWN_DISABLE, // Disable pull-down
-        .intr_type = GPIO_INTR_DISABLE,        // Disable interrupt
+        .pin_bit_mask = (1ULL << GPIO_NUM_9),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf_9);
 
-    // Set GPIO6 and GPIO9 to high
     gpio_set_level(GPIO_NUM_3, 1);
     gpio_set_level(GPIO_NUM_9, 1);
 
-    // wake up
+    // Configure wake up GPIOs
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2) | (1ULL << GPIO_WAKEUP_3),
         .mode = GPIO_MODE_INPUT,
@@ -1595,55 +1654,48 @@ void app_main()
         .intr_type = GPIO_INTR_DISABLE};
     gpio_config(&io_conf);
 
-    // Enable RTC pull-ups for all wake-up pins
     rtc_gpio_pullup_en(GPIO_WAKEUP_1);
     rtc_gpio_pullup_en(GPIO_WAKEUP_2);
     rtc_gpio_pullup_en(GPIO_WAKEUP_3);
 
-    // Disable pull-downs to ensure clean pull-up
     rtc_gpio_pulldown_dis(GPIO_WAKEUP_1);
     rtc_gpio_pulldown_dis(GPIO_WAKEUP_2);
     rtc_gpio_pulldown_dis(GPIO_WAKEUP_3);
 
-    // Enable wake-up on all three GPIOs when any goes low
     esp_sleep_enable_ext1_wakeup((1ULL << GPIO_WAKEUP_1) | (1ULL << GPIO_WAKEUP_2) | (1ULL << GPIO_WAKEUP_3), ESP_EXT1_WAKEUP_ANY_LOW);
 
+    // Handle charging wake-up
     if ((wakeup_pin_mask & (1ULL << GPIO_WAKEUP_1)) || (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_3)))
     {
-        // Wakeup caused by GPIO4 (Charger CHRG)
         printf("Wakeup caused by GPIO4 (Charger CHRG) / GPIO5 (Charger STDBY)\n");
         xTaskCreatePinnedToCore(charging_Task, "charging", 4 * 1024, NULL, 5, NULL, 0);
         return;
     }
+    
+    // Handle button wake-up
     if (wakeup_pin_mask & (1ULL << GPIO_WAKEUP_2))
     {
-        // Wakeup caused by GPIO8 (Button)
         printf("Wakeup caused by GPIO8 (Button)\n");
+        // Add a small delay to let the GPIO settle after wake-up
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    // Initialize the button
-    button_config_t btn_cfg = {0};
-    button_gpio_config_t gpio_cfg = {
-        .gpio_num = BUTTON_GPIO,
-        .active_level = BUTTON_ACTIVE_LEVEL,
-        .enable_power_save = true,
-    };
+    // Initialize button AFTER all GPIO configurations and wake-up handling
+    if (init_button() != ESP_OK) {
+        printf("Failed to initialize button, retrying...\n");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        if (init_button() != ESP_OK) {
+            printf("Button initialization failed permanently\n");
+            // You might want to handle this error case
+        }
+    }
 
-    button_handle_t btn;
-    iot_button_new_gpio_device(&btn_cfg, &gpio_cfg, &btn);
-
-    // Register event callbacks
-    iot_button_register_cb(btn, BUTTON_LONG_PRESS_START, NULL, button_long_press_cb, NULL);
-    iot_button_register_cb(btn, BUTTON_SINGLE_CLICK, NULL, button_single_click_cb, NULL);
-    iot_button_register_cb(btn, BUTTON_DOUBLE_CLICK, NULL, button_double_click_cb, NULL);
-
+    // Continue with the rest of your initialization
     init_audio_stream_buffer();
     xTaskCreatePinnedToCore(oled_task, "oled", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(boot_sound, "bootSound", 3 * 1024, NULL, 5, NULL, 1);
-    // esp_audio_play((int16_t*)m_1, sizeof(m_1), portMAX_DELAY);
     xTaskCreatePinnedToCore(&feed_Task, "feed", 8 * 1024, (void *)afe_data, 5, NULL, 0);
     xTaskCreatePinnedToCore(&detect_Task, "detect", 4 * 1024, (void *)afe_data, 5, NULL, 1);
-    // xTaskCreatePinnedToCore(play_audio_task, "music", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(decode_Task, "decode", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(i2s_writer_task, "i2sWriter", 4 * 1024, NULL, 5, NULL, 0);
     xTaskCreate(ping_task, "ping", 3 * 1024, NULL, 5, NULL);

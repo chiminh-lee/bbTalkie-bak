@@ -383,7 +383,7 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
     }
 
     // Log reception
-    is_receiving = true;
+    
     ESP_ERROR_CHECK(esp_wifi_connectionless_module_set_wake_interval(0));
     ESP_LOGI(TAG, "Received %d bytes", data_len);
 
@@ -483,6 +483,7 @@ static void esp_now_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t 
     // Others MSG, Store in queue if available
     else if (s_recv_queue != NULL)
     {
+        is_receiving = true;
         esp_now_recv_data_t recv_data;
 
         // Copy data (with size check)
@@ -1184,8 +1185,13 @@ void oled_task(void *arg)
                 // stop idleBarAnim
                 printf("Create command anim task\n");
                 spi_oled_draw_square(&spi_ssd1327, 0, 14, 128, 114, SSD1327_GS_0);
+                if(anim_currentCommand == NULL){
+                    printf("No animation for this command\n");
+                    is_command = false;
+                    break;
+                }
                 anim_currentCommand->is_playing = true;
-                xTaskCreate(animation_task, "idleSingleAnim", 2048, anim_currentCommand, 5, &anim_currentCommand->task_handle);
+                xTaskCreate(animation_task, "customAnim", 2048, anim_currentCommand, 5, &anim_currentCommand->task_handle);
                 break;
             }
             isFirstBoot = false;

@@ -211,7 +211,7 @@ static animation_map_entry_t animation_map[] = {
     {12, &anim_attention},
     {13, &anim_walk},
     {14, &anim_eat},
-    {14, &anim_drink},
+    {15, &anim_drink},
     {16, &anim_add_oil},
     {-1, NULL} // Sentinel to mark end of array
 };

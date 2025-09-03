@@ -40,13 +40,13 @@ spi_oled_animation_t anim_go_straight = {
     .reverse = false,
     .task_handle = NULL};
 
-spi_oled_animation_t anim_parking = {
+spi_oled_animation_t anim_time_out = {
     .x = 14,
     .y = 14,
     .width = 100,
     .height = 100,
-    .frame_count = 57,
-    .animation_data = (const uint8_t *)parking,
+    .frame_count = 132,
+    .animation_data = (const uint8_t *)time_out,
     .frame_delay_ms = 1000 / 30,
     .stop_frame = -1,
     .reverse = false,
@@ -67,10 +67,10 @@ spi_oled_animation_t anim_wait = {
 spi_oled_animation_t anim_hello = {
     .x = 8,
     .y = 14,
-    .width = 116,
+    .width = 100,
     .height = 100,
-    .frame_count = 30,
-    .animation_data = (const uint8_t *)hello,
+    .frame_count = 32,
+    .animation_data = (const uint8_t *)wave,
     .frame_delay_ms = 1000 / 30,
     .stop_frame = -1,
     .reverse = false,
@@ -200,7 +200,7 @@ static animation_map_entry_t animation_map[] = {
     {1, &anim_turn_left},
     {2, &anim_turn_right},
     {3, &anim_go_straight},
-    {4, &anim_parking},
+    {4, &anim_time_out},
     {5, &anim_wait},
     {6, &anim_hello},
     {7, &anim_check_mark},

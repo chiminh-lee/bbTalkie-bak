@@ -18,7 +18,7 @@ Designed By Corebb With Love From bbRealm!
 # 目录结构：
 
 **CAD** 3D模型、DXF切割图纸  
-**PCB** PCB 原理图、Gerber 制板文件、BOM 、坐标文件、EDA工程
+**PCB** PCB 原理图、Gerber 制板文件、BOM 、坐标文件、EDA工程  
 **assets** 资源文件，如动画图像、音频、设计文件  
 **esp-idf** 软件主程序，使用ESP-IDF V5.4.3版本，烧录到 ESP32 中  
 **tests** 开发过程中用到的测试程序  
@@ -28,6 +28,7 @@ Designed By Corebb With Love From bbRealm!
 需要用ESP32-S3 16MB Flash 8MB PSRAM的版本（只有这个才能用上Octal PSRAM，不然PSRAM速度跟不上会导致ESP-SR这套音频框架卡死）  
 建议使用外置天线的版本：ESP32-S3-WROOM-1U-N16R8  
 使用ESP-IDF开发环境编译并烧录  
+更多内容视情况后续更新……  
 
 # 参考资料：
 

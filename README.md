@@ -28,6 +28,7 @@ Designed By Corebb With Love From bbRealm!
 需要用ESP32-S3 16MB Flash 8MB PSRAM的版本（只有这个才能用上Octal PSRAM，不然PSRAM速度跟不上会导致ESP-SR这套音频框架卡死）  
 建议使用外置天线的版本：ESP32-S3-WROOM-1U-N16R8  
 使用ESP-IDF开发环境编译并烧录  
+蓝牙控制相机只做了简单的实现，能够支持SONY相机，因为蓝牙占用很大内存且不常用，所以单独开了一个代码分支“ble-camera"  
 更多内容视情况后续更新……  
 
 # 参考资料：

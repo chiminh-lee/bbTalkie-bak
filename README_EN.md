@@ -10,6 +10,7 @@ So I DIYed a **not-so-ordinary walkie-talkie**. It uses an **embedded neural net
 
 😄 [Afdian (Support the creator)](https://afdian.com/a/kuruibb "爱发电")  
 🐧 QQ Group (for discussion only): 647186542  
+😈 Discord Channel：[Join](https://discord.gg/gvbcCtdQrk "Join")  
 🧵 [Threads](https://www.threads.net/@coreoobb "@coreoobb") @coreoobb  
 ▶️ Video: [YouTube](https://youtu.be/v0QcsWsoYbw "YouTube") | [Bilibili](https://www.bilibili.com/video/BV1qtBBBwEWv "Bilibili")
 

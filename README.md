@@ -7,8 +7,9 @@
 普通对讲机又大又笨，还得按键才能讲话。 有天骑行时，我想——能不能做一款便携、免按键的对讲机？ 于是我 DIY 了一款不太一样的对讲机，使用嵌入式神经网络🧠，能自动检测人声🗣️、识别关键词触发动画，其它对话也能转文字气泡显示，非常好玩。
 
 😄[爱发电](https://afdian.com/a/kuruibb "爱发电")   
-🐧QQ 群（仅供交流）：647186542  
 🧵[Threads](https://www.threads.net/@coreoobb "@coreoobb") @coreoobb  
+🐧QQ 群（仅供交流，人满请加Discord）：647186542  
+😈Discord 频道：[加入](https://discord.gg/gvbcCtdQrk "加入")   
 ▶️ 本期视频(Video): [Youtube](https://youtu.be/v0QcsWsoYbw "Youtube") | [ Bilibili](https://www.bilibili.com/video/BV1qtBBBwEWv " Bilibili")
 
 # 禁止搬运到 Gitee
